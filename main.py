@@ -20,25 +20,23 @@ RSS = ["RSS链接"]
 pikpak_headers = [None] * len(USER)
 
 
+def strptime(pubdate):
+    try:
+        result = time.strftime(
+            "%Y-%m-%d", time.strptime(pubdate, "%Y-%m-%dT%H:%M:%S.%f"))
+        return result
+    except:
+        result = time.strftime(
+            "%Y-%m-%d", time.strptime(pubdate, "%Y-%m-%dT%H:%M:%S"))
+        return result
+    
 def get_rss():
     # 网站种子解析
     rss = feedparser.parse(
-        RSS[0])
-    # 将pubDate
-    for entry in rss['entries']:
-        try:
-            pubdate = entry['published']
-            # 将pubDate转换为yy-mm-dd格式
-            pubdate = time.strftime(
-                "%Y-%m-%d", time.strptime(pubdate, "%Y-%m-%dT%H:%M:%S.%f"))
-        except:
-            pubdate = entry['published']
-            # 将pubDate转换为yy-mm-dd格式
-            pubdate = time.strftime(
-                "%Y-%m-%d", time.strptime(pubdate, "%Y-%m-%dT%H:%M:%S"))
-    # 整理为JSON数组
+        'https://mikanani.me/RSS/MyBangumi?token=ekRQdSu3SrXFTn6Y1npZLFuSiys7arD7FS%2bTZ7J11DU%3d')
+
     mylist = [{'title': entry['title'], 'link':entry['link'], 'torrent':entry['enclosures']
-               [0]['url'], 'pubdate':pubdate}for entry in rss['entries']]
+            [0]['url'], 'pubdate':strptime(entry['published'])}for entry in rss['entries']]
     return mylist
 
 
@@ -77,7 +75,10 @@ def get_date(torrent):
     mylist = get_rss()
     for entry in mylist:
         if entry['torrent'] == torrent:
+            print(entry['pubdate'])
             return entry['pubdate']
+        else:
+            pass
 
 # 获取文件夹id
 
@@ -92,24 +93,12 @@ def get_folder_id(torrent, folder_path, account):
     files = create_result['files']
     # 遍历files列表
     for file in files:
-        if file['name'] == get_date(torrent):
+        date =get_date(torrent)
+        print(date)
+        if file['name'] == date:
             return file['id']
-        else:
-            folder_id = create_folder(get_date(torrent), PATH[0], USER[0])
-            return folder_id
-
-    # 处理请求异常
-    if "error" in create_result:
-        if create_result['error_code'] == 16:
-            logging.info(f"账号{account}登录过期，正在重新登录")
-            login(account)
-            login_headers = get_headers(account)
-            create_result = requests.post(
-                url=create_url, headers=login_headers, timeout=5, verify=False).json()
-        else:
-            logging.error(
-                f"账号{account}创建文件夹失败，错误信息：{create_result['error_description']}")
-            return None
+    folder_id = create_folder(date, PATH[0], USER[0])
+    return folder_id
 
 # 创建文件夹
 
