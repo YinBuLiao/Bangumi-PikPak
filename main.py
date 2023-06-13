@@ -32,8 +32,7 @@ def strptime(pubdate):
     
 def get_rss():
     # 网站种子解析
-    rss = feedparser.parse(
-        'https://mikanani.me/RSS/MyBangumi?token=ekRQdSu3SrXFTn6Y1npZLFuSiys7arD7FS%2bTZ7J11DU%3d')
+    rss = feedparser.parse(RSS[0])
 
     mylist = [{'title': entry['title'], 'link':entry['link'], 'torrent':entry['enclosures']
             [0]['url'], 'pubdate':strptime(entry['published'])}for entry in rss['entries']]
