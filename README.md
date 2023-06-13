@@ -4,6 +4,9 @@
     <img title="mikan project" src="https://mikanani.me/images/mikan-pic.png" alt="" width="10%">
     <img title="pikpak" src="https://raw.githubusercontent.com/YinBuLiao/Bangumi-PikPak/main/img/pikpak.png">
 </p>
+
+***
+
 本项目是基于 [Mikan Project](https://mikanani.me)、[PikPak](https://mypikpak.com/) 的全自动追番整理下载工具。只需要在 [Mikan Project](https://mikanani.me) 上订阅番剧，就可以全自动追番。
 
 ## Bangumi-PikPak 功能说明
