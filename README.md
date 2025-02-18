@@ -29,13 +29,15 @@
 
 ## 配置教程
 - 使用的Python版本需为3.10或更高
-- 编辑Main.py中的:
+- 编辑`main.py`**同目录**下的`config.json`
   ```
-  USER = ["用户名"]
-  PASSWORD = ["密码"]
-  PATH = ['文件夹ID']
-  RSS = ["RSS链接"]
+  "username": "用户名",
+  "password": "密码",
+  "path": "文件夹ID",
+  "rss": "RSS链接"
   ```
+  注意转义，若密码为`1\2"\"`，需写成`1\\2\"\\\"`
+
 - 开机自动启动:
   
   完成编辑之后，可以通过安装Pyinstaller来生成可执行文件
@@ -44,9 +46,9 @@
   ```
   然后运行
   ```
-  pyinstaller --onefile main.py
+  pyinstaller --onefile --noconsole main.py
   ```
-  **如果不想要界面，添加`--noconsole`参数**
+  **如果想要界面，删去`--noconsole`参数**
 
   生成的可执行程序保存在dist目录下，将其加入启动项（创建任务计划程序/写入注册表/放入启动文件夹）
 
