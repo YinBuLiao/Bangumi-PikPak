@@ -61,7 +61,7 @@ def init_clients():
             else:
                 client = PikPakApi(username=USER[0], password=PASSWORD[0])
         except Exception as e:
-            logging.error(f"加载客户端状态失败: {str(e)}，将重新创建客户端。")
+            logging.warning(f"加载客户端状态失败: {str(e)}，将重新创建客户端。")
             client = PikPakApi(username=USER[0], password=PASSWORD[0])
     else:
         client = PikPakApi(username=USER[0], password=PASSWORD[0])
@@ -107,7 +107,7 @@ async def login(account_index):
         await client.file_list(parent_id=PATH[account_index])
         logging.info(f"账号 {USER[account_index]} Token 有效")
     except Exception as e:
-        logging.error(f"使用 token 读取文件列表失败: {str(e)}，将重新登录。")
+        logging.warning(f"使用 token 读取文件列表失败: {str(e)}，将重新登录。")
         try:
             await client.login()
         except Exception as e:
@@ -204,10 +204,21 @@ async def check_torrent(account_index, name, torrent, check_mode: str):
     if not os.path.exists(f'torrent/{name}'):
         if check_mode == "local":
             return True
-        await download_torrent(name, torrent)
-        folder_id = await get_folder_id(account_index, torrent)
-        await magnet_upload(account_index, torrent, folder_id)
-        return True
+        else:
+            await download_torrent(name, torrent)
+            folder_id = await get_folder_id(account_index, torrent)
+            
+            #遍历该文件夹下的文件，若已存在该种子则不再创建
+            info_hash = name.rsplit('.', 1)[0]
+            magnet_link = f"magnet:?xt=urn:btih:{info_hash}"
+            client = PIKPAK_CLIENTS[account_index]
+            sub_folder_list = await client.file_list(parent_id=folder_id)
+            for sub_file in sub_folder_list.get('files', []):
+                if sub_file['params']['url'] == magnet_link:
+                    return False
+            
+            await magnet_upload(account_index, torrent, folder_id)
+            return True
     else:
         return False
 
@@ -235,6 +246,8 @@ async def main():
                 name = entry['torrent'].split('/')[-1]
                 torrent = entry['torrent']
                 await check_torrent(i, name, torrent, "network")
+    else:
+        logging.info("RSS源没有新的更新")
 
 
 def setup_logging(
