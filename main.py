@@ -1,15 +1,18 @@
 import asyncio
+import urllib.request
 import feedparser
 import logging
-from logging.handlers import RotatingFileHandler
 import os
 import signal
 import sys
 import time
 import httpx
 import json
+import urllib
+from logging.handlers import RotatingFileHandler
 from pikpakapi import PikPakApi  # requirement: python >= 3.10
-
+from bs4 import BeautifulSoup
+from pathvalidate import sanitize_filepath
 
 CONFIG_FILE = "config.json"     # 配置文件（保存基本配置）
 CLIENT_STATE_FILE = "pikpak.json"    # 客户端状态文件（保存 PikPakApi 登录状态及 token 等信息）
@@ -23,7 +26,20 @@ INTERVAL_TIME_RSS = 600  # rss 检查间隔
 INTERVAL_TIME_REFRESH = 21600  # token 刷新间隔
 PIKPAK_CLIENTS = [""]
 last_refresh_time = 0
+mylist = []
 
+# CSS_Selector
+BANGUMI_TITLE_SELECTOR = 'bangumi-title'
+
+# RSS_Key
+RSS_KEY_TITLE = 'title'
+RSS_KEY_LINK = 'link'
+RSS_KEY_TORRENT = 'enclosures'
+RSS_KEY_PUB = 'published'
+RSS_KEY_BGM_TITLE = 'bangumi_title'
+
+# Regex
+CHAR_RULE = "\"M\"\\a/ry/ h**ad:>> a\\/:*?\"| li*tt|le|| la\"mb.?"
 
 # 加载基本配置文件，并更新全局变量
 def load_config():
@@ -83,6 +99,11 @@ def update_config():
     except Exception as e:
         logging.error(f"配置文件更新失败: {str(e)}")
 
+# 读取bangumi番剧名称
+async def read_bangumi_title(mikan_episode_url):
+    soup = BeautifulSoup(urllib.request.urlopen(mikan_episode_url))
+    title = soup.select_one("p",{"class": BANGUMI_TITLE_SELECTOR}).text.strip()
+    return title
 
 # 保存token到 CLIENT_STATE_FILE
 def save_client():
@@ -140,38 +161,38 @@ async def get_rss():
     rss = feedparser.parse(RSS[0])
     return [
         {
-            'title': entry['title'],
-            'link': entry['link'],
-            'torrent': entry['enclosures'][0]['url'],
-            'pubdate': entry['published'].split("T")[0]
+            RSS_KEY_TITLE: entry[RSS_KEY_TITLE],
+            RSS_KEY_LINK: entry[RSS_KEY_LINK],
+            RSS_KEY_TORRENT: entry[RSS_KEY_TORRENT][0]['url'],
+            RSS_KEY_PUB: entry[RSS_KEY_PUB].split("T")[0],
+            RSS_KEY_BGM_TITLE: sanitize_filepath(await read_bangumi_title(entry[RSS_KEY_LINK]))
         }
         for entry in rss['entries']
     ]
 
 
-# 根据种子对应的发布时间获取或创建存放该种子的文件夹
+# 根据番剧名称创建文件夹
 async def get_folder_id(account_index, torrent):
     client = PIKPAK_CLIENTS[account_index]
     folder_path = PATH[account_index]
-    pubdate = await get_date(torrent)
+    title = await get_title(torrent)
     # 获取文件夹列表
     folder_list = await client.file_list(parent_id=folder_path)
     for file in folder_list.get('files', []):
-        if file['name'] == pubdate:
+        if file['name'] == title:
             return file['id']
     # 未找到则创建新文件夹
-    folder_info = await client.create_folder(name=pubdate, parent_id=folder_path)
+    folder_info = await client.create_folder(name=title, parent_id=folder_path)
     return folder_info['file']['id']
 
 
-# 通过解析 RSS 查找 torrent 对应的发布时间
-async def get_date(torrent):
-    mylist = await get_rss()
+# 通过解析 RSS 查找 torrent 对应的番剧名称
+async def get_title(torrent):
     for entry in mylist:
-        if entry['torrent'] == torrent:
-            logging.info(f"种子标题: {entry['title']}")
-            logging.info(f"发布时间: {entry['pubdate']}")
-            return entry['pubdate']
+        if entry[RSS_KEY_TORRENT] == torrent:
+            logging.info(f"种子标题: {entry[RSS_KEY_TITLE]}")
+            logging.info(f"番剧标题: {entry[RSS_KEY_BGM_TITLE]}")
+            return entry[RSS_KEY_BGM_TITLE]
     return None
 
 
@@ -189,23 +210,23 @@ async def magnet_upload(account_index, file_url, folder_id):
 
 
 # 下载 torrent 文件并保存到本地
-async def download_torrent(name, torrent):
+async def download_torrent(folder, name, torrent):
     async with httpx.AsyncClient() as client:
         response = await client.get(torrent)
-    os.makedirs('torrent', exist_ok=True)
-    with open(f'torrent/{name}', 'wb') as f:
+    os.makedirs(folder, exist_ok=True)
+    with open(f'{folder}/{name}', 'wb') as f:
         f.write(response.content)
     logging.info(f"Finished downloading torrent: {name}")
-    return f'torrent/{name}'
+    return f'{folder}/{name}'
 
 
 # 检查本地是否存在种子文件；若不存在则下载并提交离线任务
-async def check_torrent(account_index, name, torrent, check_mode: str):
-    if not os.path.exists(f'torrent/{name}'):
+async def check_torrent(account_index, folder, name, torrent, check_mode: str):
+    if not os.path.exists(f'{folder}/{name}'):
         if check_mode == "local":
             return True
         else:
-            await download_torrent(name, torrent)
+            await download_torrent(folder, name, torrent)
             folder_id = await get_folder_id(account_index, torrent)
             
             #遍历该文件夹下的文件，若已存在该种子则不再创建
@@ -216,7 +237,6 @@ async def check_torrent(account_index, name, torrent, check_mode: str):
             for sub_file in sub_folder_list.get('files', []):
                 if sub_file['params']['url'] == magnet_link:
                     return False
-            
             await magnet_upload(account_index, torrent, folder_id)
             return True
     else:
@@ -224,6 +244,7 @@ async def check_torrent(account_index, name, torrent, check_mode: str):
 
 
 async def main():
+    global mylist
     # 刷新 token
     await auto_refresh_token()
     # 获取 RSS 种子列表
@@ -231,9 +252,10 @@ async def main():
     # 先检查本地文件是否存在，减少重复请求次数
     needLogin = False
     for entry in mylist:
-        name = entry['torrent'].split('/')[-1]
-        torrent = entry['torrent']
-        needLogin = await check_torrent(0, name, torrent, "local")
+        name = entry[RSS_KEY_TORRENT].split('/')[-1]
+        torrent = entry[RSS_KEY_TORRENT]
+        folder = f'torrent/{entry[RSS_KEY_BGM_TITLE]}'
+        needLogin = await check_torrent(0, folder, name, torrent, "local")
         if needLogin:
             break
 
@@ -243,9 +265,10 @@ async def main():
         # 遍历所有账号和 RSS 列表，串行处理避免文件夹创建冲突
         for i in range(len(USER)):
             for entry in mylist:
-                name = entry['torrent'].split('/')[-1]
-                torrent = entry['torrent']
-                await check_torrent(i, name, torrent, "network")
+                name = entry[RSS_KEY_TORRENT].split('/')[-1]
+                torrent = entry[RSS_KEY_TORRENT]
+                folder = f'torrent/{entry[RSS_KEY_BGM_TITLE]}'
+                await check_torrent(i, folder, name, torrent, "network")
     else:
         logging.info("RSS源没有新的更新")
 
