@@ -1,20 +1,11 @@
 # Bangumi-PikPak
 
-> ⚠️ **重要声明**：本项目是基于 [YinBuLiao](https://github.com/YinBuLiao) 的 [Bangumi-PikPak](https://github.com/YinBuLiao/Bangumi-PikPak) 项目的改进版本，主要添加了代理支持等功能。
-
 <p align="center">
     <img title="mikan project" src="https://mikanani.me/images/mikan-pic.png" alt="" width="10%">
     <img title="pikpak" src="https://raw.githubusercontent.com/YinBuLiao/Bangumi-PikPak/main/img/pikpak.png">
 </p>
 
 ***
-
-## 🔗 与原项目的关系
-
-- **原项目**：[YinBuLiao/Bangumi-PikPak](https://github.com/YinBuLiao/Bangumi-PikPak)
-- **改进内容**：添加代理支持、改进配置管理、完善文档等
-- **许可证**：遵循原项目的 MIT 许可证
-
 ## ✨ 新增功能
 
 - 🌐 **代理支持**：支持 HTTP/HTTPS/SOCKS 代理
@@ -47,7 +38,7 @@
 
 1. **克隆项目**
 ```bash
-git clone https://github.com/hrWong/Bangumi-PikPak.git
+[git clone https://github.com/hrWong/Bangumi-PikPak.git](https://github.com/YinBuLiao/Bangumi-PikPak.git)
 cd Bangumi-PikPak
 ```
 
@@ -176,7 +167,7 @@ PikPak 根目录/
 ### 开发环境设置
 ```bash
 # 克隆项目
-git clone https://github.com/your-username/Bangumi-PikPak.git
+git clone https://github.com/YinBuLiao/Bangumi-PikPak.git
 cd Bangumi-PikPak
 
 # 创建虚拟环境
@@ -214,16 +205,9 @@ A: 程序会自动检测重复内容，如果仍有问题，检查日志文件
 
 ## 🙏 致谢
 
-- [YinBuLiao](https://github.com/YinBuLiao) - 项目原作者，创建了 [Bangumi-PikPak](https://github.com/YinBuLiao/Bangumi-PikPak) 项目
 - [Mikan Project](https://mikanani.me) - 提供番剧 RSS 源
 - [PikPak](https://mypikpak.com/) - 提供云存储服务
 - [pikpakapi](https://github.com/Quan666/PikPakAPI) - PikPak API 封装
-
-## 📞 联系方式
-
-- 项目主页：https://github.com/hrWong/Bangumi-PikPak
-- 问题反馈：https://github.com/hrWong/Bangumi-PikPak/issues
-- 邮箱：h.r.wong@foxmail.com
 
 ---
 
