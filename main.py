@@ -14,8 +14,11 @@ from pikpakapi import PikPakApi  # requirement: python >= 3.10
 from bs4 import BeautifulSoup
 from pathvalidate import sanitize_filepath
 
-CONFIG_FILE = "config.json"     # 配置文件（保存基本配置）
-CLIENT_STATE_FILE = "pikpak.json"    # 客户端状态文件（保存 PikPakApi 登录状态及 token 等信息）
+# 获取脚本所在目录的绝对路径
+SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
+
+CONFIG_FILE = os.path.join(SCRIPT_DIR, "config.json")     # 配置文件（保存基本配置）
+CLIENT_STATE_FILE = os.path.join(SCRIPT_DIR, "pikpak.json")    # 客户端状态文件（保存 PikPakApi 登录状态及 token 等信息）
 
 # 全局变量（由配置文件或手动填写）
 USER = [""]
@@ -27,6 +30,12 @@ INTERVAL_TIME_REFRESH = 21600  # token 刷新间隔
 PIKPAK_CLIENTS = [""]
 last_refresh_time = 0
 mylist = []
+
+# 代理配置
+HTTP_PROXY = ""      # HTTP代理地址，例如: "http://127.0.0.1:7890"
+HTTPS_PROXY = ""     # HTTPS代理地址，例如: "http://127.0.0.1:7890"
+SOCKS_PROXY = ""     # SOCKS代理地址，例如: "socks5://127.0.0.1:7890"
+ENABLE_PROXY = False # 是否启用代理
 
 # CSS_Selector
 BANGUMI_TITLE_SELECTOR = 'bangumi-title'
@@ -43,6 +52,8 @@ CHAR_RULE = "\"M\"\\a/ry/ h**ad:>> a\\/:*?\"| li*tt|le|| la\"mb.?"
 
 # 加载基本配置文件，并更新全局变量
 def load_config():
+    global HTTP_PROXY, HTTPS_PROXY, SOCKS_PROXY, ENABLE_PROXY
+    
     if os.path.exists(CONFIG_FILE):
         try:
             with open(CONFIG_FILE, "r", encoding="utf-8") as f:
@@ -52,6 +63,14 @@ def load_config():
                 PASSWORD[0] = config.get("password")
                 PATH[0] = config.get("path")
                 RSS[0] = config.get("rss")
+            
+            # 加载代理配置
+            HTTP_PROXY = config.get("http_proxy", "")
+            HTTPS_PROXY = config.get("https_proxy", "")
+            SOCKS_PROXY = config.get("socks_proxy", "")
+            ENABLE_PROXY = config.get("enable_proxy", False)
+            logging.info("代理配置加载成功！")
+            
             logging.info("配置文件加载成功！")
         except Exception as e:
             logging.error(f"加载配置文件失败: {str(e)}")
@@ -65,6 +84,22 @@ def load_config():
 def init_clients():
     global last_refresh_time
     client = None
+    
+    # 设置环境变量代理，支持HTTP/HTTPS/SOCKS代理
+    if ENABLE_PROXY:
+        if HTTP_PROXY:
+            os.environ['HTTP_PROXY'] = HTTP_PROXY
+            os.environ['http_proxy'] = HTTP_PROXY
+        if HTTPS_PROXY:
+            os.environ['HTTPS_PROXY'] = HTTPS_PROXY
+            os.environ['https_proxy'] = HTTPS_PROXY
+        if SOCKS_PROXY:
+            os.environ['SOCKS_PROXY'] = SOCKS_PROXY
+            os.environ['socks_proxy'] = SOCKS_PROXY
+        
+        logging.info(f"代理环境变量已设置: HTTP_PROXY={os.environ.get('HTTP_PROXY', '')}, HTTPS_PROXY={os.environ.get('HTTPS_PROXY', '')}, SOCKS_PROXY={os.environ.get('SOCKS_PROXY', '')}")
+        logging.info(f"代理配置已启用")
+    
     if os.path.exists(CLIENT_STATE_FILE):
         try:
             with open(CLIENT_STATE_FILE, "r", encoding="utf-8") as f:
@@ -81,6 +116,7 @@ def init_clients():
             client = PikPakApi(username=USER[0], password=PASSWORD[0])
     else:
         client = PikPakApi(username=USER[0], password=PASSWORD[0])
+    
     PIKPAK_CLIENTS[0] = client
 
 
@@ -91,6 +127,10 @@ def update_config():
         "password": PASSWORD[0],
         "path": PATH[0],
         "rss": RSS[0],
+        "http_proxy": HTTP_PROXY,
+        "https_proxy": HTTPS_PROXY,
+        "socks_proxy": SOCKS_PROXY,
+        "enable_proxy": ENABLE_PROXY,
     }
     try:
         with open(CONFIG_FILE, "w", encoding="utf-8") as f:
@@ -101,6 +141,22 @@ def update_config():
 
 # 读取bangumi番剧名称
 async def read_bangumi_title(mikan_episode_url):
+    # 设置代理，支持HTTP/HTTPS/SOCKS代理
+    if ENABLE_PROXY:
+        proxy_dict = {}
+        if HTTP_PROXY:
+            proxy_dict['http'] = HTTP_PROXY
+        if HTTPS_PROXY:
+            proxy_dict['https'] = HTTPS_PROXY
+        elif HTTP_PROXY:
+            proxy_dict['https'] = HTTP_PROXY
+        
+        if proxy_dict:
+            proxy_handler = urllib.request.ProxyHandler(proxy_dict)
+            opener = urllib.request.build_opener(proxy_handler)
+            urllib.request.install_opener(opener)
+            logging.info(f"urllib代理已设置: {proxy_dict}")
+    
     soup = BeautifulSoup(urllib.request.urlopen(mikan_episode_url))
     title = soup.select_one("p",{"class": BANGUMI_TITLE_SELECTOR}).text.strip()
     return title
@@ -211,6 +267,7 @@ async def magnet_upload(account_index, file_url, folder_id):
 
 # 下载 torrent 文件并保存到本地
 async def download_torrent(folder, name, torrent):
+    # 代理配置已通过环境变量设置，httpx会自动使用
     async with httpx.AsyncClient() as client:
         response = await client.get(torrent)
     os.makedirs(folder, exist_ok=True)

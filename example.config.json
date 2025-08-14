@@ -1,0 +1,10 @@
+{
+    "username": "your_email@example.com",
+    "password": "your_password",
+    "path": "your_pikpak_folder_id",
+    "rss": "https://mikanani.me/RSS/MyBangumi?token=your_token_here",
+    "http_proxy": "http://127.0.0.1:7890",
+    "https_proxy": "http://127.0.0.1:7890",
+    "socks_proxy": "socks5://127.0.0.1:7890",
+    "enable_proxy": false
+}
