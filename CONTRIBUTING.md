@@ -8,7 +8,7 @@
 
 如果您发现了 bug，请：
 
-1. 检查现有的 [Issues](https://github.com/your-username/Bangumi-PikPak/issues) 是否已经报告
+1. 检查现有的 [Issues](https://github.com/hrWong/Bangumi-PikPak/issues) 是否已经报告
 2. 如果没有，请创建一个新的 Issue
 3. 使用我们提供的 bug 报告模板
 4. 提供详细的错误信息和重现步骤
@@ -17,7 +17,7 @@
 
 如果您有功能建议，请：
 
-1. 检查现有的 [Issues](https://github.com/your-username/Bangumi-PikPak/issues) 是否已经提出
+1. 检查现有的 [Issues](https://github.com/hrWong/Bangumi-PikPak/issues) 是否已经提出
 2. 如果没有，请创建一个新的 Issue
 3. 详细描述您想要的功能和用例
 
@@ -26,10 +26,10 @@
 如果您想贡献代码，请：
 
 1. Fork 这个仓库
-2. 创建一个新的分支：`git checkout -b feature/your-feature-name`
+2. 创建一个新的分支：`git checkout -b feature/proxy-support`
 3. 进行您的更改
 4. 提交您的更改：`git commit -m 'Add some feature'`
-5. 推送到分支：`git push origin feature/your-feature-name`
+5. 推送到分支：`git push origin feature/proxy-support`
 6. 创建一个 Pull Request
 
 ## 开发环境设置
@@ -43,7 +43,7 @@
 
 1. **Fork 并克隆仓库**
 ```bash
-git clone https://github.com/your-username/Bangumi-PikPak.git
+git clone https://github.com/hrWong/Bangumi-PikPak.git
 cd Bangumi-PikPak
 ```
 
@@ -64,27 +64,6 @@ pip install -r requirements.txt
 ```bash
 pip install -r requirements-dev.txt  # 如果有的话
 ```
-
-## 代码规范
-
-### Python 代码风格
-
-- 遵循 [PEP 8](https://www.python.org/dev/peps/pep-0008/) 代码风格
-- 使用 4 个空格进行缩进
-- 行长度限制在 79 个字符以内
-- 使用有意义的变量和函数名
-
-### 注释和文档
-
-- 为所有公共函数和类添加文档字符串
-- 使用中文注释说明复杂的业务逻辑
-- 保持注释与代码同步
-
-### 测试
-
-- 为新功能编写测试
-- 确保所有测试通过
-- 保持测试覆盖率
 
 ## 提交规范
 
@@ -131,9 +110,8 @@ Closes #123
 
 如果您在贡献过程中遇到任何问题，请：
 
-1. 查看 [Issues](https://github.com/your-username/Bangumi-PikPak/issues)
-2. 查看 [Wiki](https://github.com/your-username/Bangumi-PikPak/wiki)（如果有）
-3. 创建新的 Issue 描述您的问题
+1. 查看 [Issues](https://github.com/YinBuLiao/Bangumi-PikPak/issues)
+2. 创建新的 Issue 描述您的问题
 
 ## 行为准则
 

@@ -153,3 +153,4 @@ cython_debug/
 
 torrent/
 config.json
+pikpak.json

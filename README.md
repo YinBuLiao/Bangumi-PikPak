@@ -130,6 +130,8 @@ pyinstaller --onefile --noconsole main.py
 - 将可执行文件路径添加到 `~/.bashrc`
 - 或创建 systemd 服务
 
+详细的 Linux 系统服务部署方法请参考：[Linux 部署指南](Bangumi-PikPak%20Linux部署.md)
+
 ## 🔧 工作原理
 
 ### 更新检测流程
@@ -167,7 +169,7 @@ PikPak 根目录/
 ### 开发环境设置
 ```bash
 # 克隆项目
-git clone https://github.com/YinBuLiao/Bangumi-PikPak.git
+[git clone https://github.com/hrWong/Bangumi-PikPak.git](https://github.com/YinBuLiao/Bangumi-PikPak.git)
 cd Bangumi-PikPak
 
 # 创建虚拟环境
