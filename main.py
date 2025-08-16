@@ -9,6 +9,7 @@ import time
 import httpx
 import json
 import urllib
+import requests
 from logging.handlers import RotatingFileHandler
 from pikpakapi import PikPakApi  # requirement: python >= 3.10
 from bs4 import BeautifulSoup
@@ -37,6 +38,10 @@ HTTPS_PROXY = ""     # HTTPS代理地址，例如: "http://127.0.0.1:7890"
 SOCKS_PROXY = ""     # SOCKS代理地址，例如: "socks5://127.0.0.1:7890"
 ENABLE_PROXY = False # 是否启用代理
 
+# 通知配置
+NTFY_URL = ""        # ntfy.sh 通知地址，例如: "https://ntfy.sh/mytopic"
+ENABLE_NOTIFICATIONS = False # 是否启用通知
+
 # CSS_Selector
 BANGUMI_TITLE_SELECTOR = 'bangumi-title'
 
@@ -52,7 +57,7 @@ CHAR_RULE = "\"M\"\\a/ry/ h**ad:>> a\\/:*?\"| li*tt|le|| la\"mb.?"
 
 # 加载基本配置文件，并更新全局变量
 def load_config():
-    global HTTP_PROXY, HTTPS_PROXY, SOCKS_PROXY, ENABLE_PROXY
+    global HTTP_PROXY, HTTPS_PROXY, SOCKS_PROXY, ENABLE_PROXY, NTFY_URL, ENABLE_NOTIFICATIONS
     
     if os.path.exists(CONFIG_FILE):
         try:
@@ -70,6 +75,12 @@ def load_config():
             SOCKS_PROXY = config.get("socks_proxy", "")
             ENABLE_PROXY = config.get("enable_proxy", False)
             logging.info("代理配置加载成功！")
+            
+            # 加载通知配置
+            NTFY_URL = config.get("ntfy_url", "")
+            ENABLE_NOTIFICATIONS = config.get("enable_notifications", False)
+            if ENABLE_NOTIFICATIONS and NTFY_URL:
+                logging.info(f"通知配置加载成功！通知地址：{NTFY_URL}")
             
             logging.info("配置文件加载成功！")
         except Exception as e:
@@ -131,6 +142,8 @@ def update_config():
         "https_proxy": HTTPS_PROXY,
         "socks_proxy": SOCKS_PROXY,
         "enable_proxy": ENABLE_PROXY,
+        "ntfy_url": NTFY_URL,
+        "enable_notifications": ENABLE_NOTIFICATIONS,
     }
     try:
         with open(CONFIG_FILE, "w", encoding="utf-8") as f:
@@ -138,6 +151,52 @@ def update_config():
         logging.info("配置文件更新成功！")
     except Exception as e:
         logging.error(f"配置文件更新失败: {str(e)}")
+
+# 发送 ntfy.sh 通知
+async def send_notification(title, message):
+    """发送通知到 ntfy.sh
+    
+    Args:
+        title: 通知标题
+        message: 通知内容
+    """
+    if not ENABLE_NOTIFICATIONS or not NTFY_URL:
+        return
+    
+    try:
+        # 设置代理（如果启用）
+        proxies = {}
+        if ENABLE_PROXY:
+            if HTTP_PROXY:
+                proxies['http'] = HTTP_PROXY
+            if HTTPS_PROXY:
+                proxies['https'] = HTTPS_PROXY
+            elif HTTP_PROXY:
+                proxies['https'] = HTTP_PROXY
+        
+        # 发送通知 - 确保 headers 中只使用 ASCII 字符
+        clean_title = title.encode('ascii', 'ignore').decode('ascii')  # 移除非ASCII字符
+        headers = {
+            'Title': clean_title,
+            'Priority': 'default',
+            'Tags': 'anime,pikpak'
+        }
+        
+        response = requests.post(
+            NTFY_URL,
+            data=message.encode(encoding='utf-8'),
+            headers=headers,
+            proxies=proxies if proxies else None,
+            timeout=10
+        )
+        
+        if response.status_code == 200:
+            logging.info(f"通知发送成功: {title}")
+        else:
+            logging.warning(f"通知发送失败，状态码: {response.status_code}")
+            
+    except Exception as e:
+        logging.error(f"发送通知时出错: {str(e)}")
 
 # 读取bangumi番剧名称
 async def read_bangumi_title(mikan_episode_url):
@@ -253,7 +312,7 @@ async def get_title(torrent):
 
 
 # 提交离线磁力任务至 PikPak
-async def magnet_upload(account_index, file_url, folder_id):
+async def magnet_upload(account_index, file_url, folder_id, bangumi_title=None):
     client = PIKPAK_CLIENTS[account_index]
     try:
         result = await client.offline_download(file_url=file_url, parent_id=folder_id)
@@ -261,7 +320,19 @@ async def magnet_upload(account_index, file_url, folder_id):
         logging.error(
             f"账号 {USER[account_index]} 添加离线磁力任务失败: {e}")
         return None, None
+    
     logging.info(f"账号 {USER[account_index]} 添加离线磁力任务: {file_url}")
+    
+    # 发送成功通知
+    if bangumi_title:
+        title = "番剧更新"
+        message = f"📺 {bangumi_title}更新啦！快去看看吧！ 🎉"
+    else:
+        title = "PikPak 任务"  
+        message = f"✅ 成功添加离线任务：{result['task']['name']} 🎉"
+    
+    await send_notification(title, message)
+    
     return result['task']['id'], result['task']['name']
 
 
@@ -294,7 +365,10 @@ async def check_torrent(account_index, folder, name, torrent, check_mode: str):
             for sub_file in sub_folder_list.get('files', []):
                 if sub_file['params']['url'] == magnet_link:
                     return False
-            await magnet_upload(account_index, torrent, folder_id)
+            
+            # 获取番剧标题用于通知
+            bangumi_title = await get_title(torrent)
+            await magnet_upload(account_index, torrent, folder_id, bangumi_title)
             return True
     else:
         return False

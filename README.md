@@ -9,6 +9,7 @@
 ## ✨ 新增功能
 
 - 🌐 **代理支持**：支持 HTTP/HTTPS/SOCKS 代理
+- 📱 **消息通知**：支持 ntfy.sh 实时推送通知
 - ⚙️ **改进配置**：更好的配置文件管理
 - 📊 **完善日志**：详细的日志记录系统
 - 📚 **项目文档**：完整的安装和使用说明
@@ -24,6 +25,7 @@
 - 📁 **智能整理**：根据番剧更新时间自动分类整理
 - 🤖 **完全自动化**：无需维护，完全无感使用
 - 🌐 **代理支持**：支持 HTTP/HTTPS/SOCKS 代理
+- 📱 **消息通知**：支持 ntfy.sh 推送，第一时间获知番剧更新
 - 📊 **日志记录**：完整的操作日志，便于问题排查
 
 ## 🚀 快速开始
@@ -76,7 +78,9 @@ python main.py
     "http_proxy": "http://127.0.0.1:7890",
     "https_proxy": "http://127.0.0.1:7890",
     "socks_proxy": "socks5://127.0.0.1:7890",
-    "enable_proxy": false
+    "enable_proxy": false,
+    "ntfy_url": "https://ntfy.sh/mytopic",
+    "enable_notifications": true
 }
 ```
 
@@ -92,6 +96,8 @@ python main.py
 | `https_proxy` | HTTPS 代理地址 | `http://127.0.0.1:7890` |
 | `socks_proxy` | SOCKS 代理地址 | `socks5://127.0.0.1:7890` |
 | `enable_proxy` | 是否启用代理 | `true` 或 `false` |
+| `ntfy_url` | ntfy.sh 通知地址 | `https://ntfy.sh/mytopic` |
+| `enable_notifications` | 是否启用通知 | `true` 或 `false` |
 
 ### 获取配置信息
 
@@ -104,6 +110,15 @@ python main.py
 1. 在 [Mikan Project](https://mikanani.me) 订阅番剧
 2. 在首页右下角复制 RSS 订阅链接
 3. 格式：`https://mikanani.me/RSS/MyBangumi?token=xxx%3d%3d`
+
+#### 通知设置
+1. 访问 [ntfy.sh](https://ntfy.sh) 
+2. 选择一个独特的主题名称，例如：`your-unique-topic-name`
+3. 通知地址格式：`https://ntfy.sh/your-unique-topic-name`
+4. 在手机上安装 [ntfy app](https://ntfy.sh/docs/subscribe/phone/) 并订阅该主题
+5. 或者使用 Web 版：在浏览器中访问 `https://ntfy.sh/your-unique-topic-name`
+
+**安全提示**：请选择独特且不易猜测的主题名称，避免他人接收到您的通知
 
 ## 📦 打包部署
 
@@ -139,7 +154,8 @@ pyinstaller --onefile --noconsole main.py
 2. **番剧识别**：访问番剧页面提取标题信息
 3. **文件夹管理**：自动创建番剧分类文件夹
 4. **种子处理**：下载种子并上传到 PikPak
-5. **重复检测**：智能避免重复内容
+5. **消息通知**：实时推送番剧更新通知到您的设备
+6. **重复检测**：智能避免重复内容
 
 ### 文件组织结构
 ```
@@ -201,6 +217,12 @@ A: Mikan RSS 有一定延迟，请耐心等待，或调整检查间隔时间
 ### Q: 种子重复添加
 A: 程序会自动检测重复内容，如果仍有问题，检查日志文件
 
+### Q: 没有收到通知
+A: 确认 `enable_notifications` 设置为 `true`，检查 `ntfy_url` 配置是否正确，`topic`取名要尽量独特一点，确保网络连接正常
+
+### Q: 通知内容乱码
+A: 程序已自动处理非ASCII字符，如仍有问题，请检查ntfy客户端设置
+
 ## 📄 许可证
 
 本项目采用 MIT 许可证，详见 [LICENSE](LICENSE) 文件。
@@ -210,6 +232,7 @@ A: 程序会自动检测重复内容，如果仍有问题，检查日志文件
 - [Mikan Project](https://mikanani.me) - 提供番剧 RSS 源
 - [PikPak](https://mypikpak.com/) - 提供云存储服务
 - [pikpakapi](https://github.com/Quan666/PikPakAPI) - PikPak API 封装
+- [ntfy](https://github.com/binwiederhier/ntfy) - 简单易用的推送通知服务
 
 ---
 

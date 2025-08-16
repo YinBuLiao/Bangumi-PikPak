@@ -6,5 +6,7 @@
     "http_proxy": "http://127.0.0.1:7890",
     "https_proxy": "http://127.0.0.1:7890",
     "socks_proxy": "socks5://127.0.0.1:7890",
-    "enable_proxy": false
+    "enable_proxy": false,
+    "ntfy_url": "https://ntfy.sh/mytopic",
+    "enable_notifications": true
 }
