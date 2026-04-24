@@ -69,7 +69,7 @@ cp example.config.json config.json
 构建：
 
 ```bash
-go build ./cmd/bangumi-pikpak
+go build .
 ```
 
 运行：
@@ -87,7 +87,7 @@ Windows PowerShell：
 单次运行，适合测试、cron 或容器任务：
 
 ```bash
-go run ./cmd/bangumi-pikpak -config config.json -once
+go run . -config config.json -once
 ```
 
 ## 常用参数
@@ -152,8 +152,8 @@ sudo systemctl enable --now bangumi-pikpak
 
 ```bash
 go test ./...
-go build ./cmd/bangumi-pikpak
-go run ./cmd/bangumi-pikpak -config example.config.json -once
+go build .
+go run . -config example.config.json -once
 ```
 
 `example.config.json` 只包含示例值，不能用于真实下载。
@@ -161,4 +161,5 @@ go run ./cmd/bangumi-pikpak -config example.config.json -once
 ## 许可证
 
 MIT，详见 `LICENSE`。
+
 
