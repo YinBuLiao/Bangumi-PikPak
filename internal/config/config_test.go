@@ -62,3 +62,19 @@ func TestSaveRoundTrip(t *testing.T) {
 		t.Fatalf("round trip mismatch: %#v", loaded)
 	}
 }
+
+func TestValidateRejectsExampleValues(t *testing.T) {
+	cfg := Config{
+		Username: "your_email@example.com",
+		Password: "your_password",
+		Path:     "your_pikpak_folder_id",
+		RSS:      "https://mikanani.me/RSS/MyBangumi?token=your_token_here",
+	}
+	err := cfg.Validate()
+	if err == nil {
+		t.Fatal("expected validation error for example values")
+	}
+	if !strings.Contains(err.Error(), "example") {
+		t.Fatalf("validation error should mention example values, got %v", err)
+	}
+}

@@ -60,5 +60,26 @@ func (c Config) Validate() error {
 	if len(missing) > 0 {
 		return errors.New("missing required config fields: " + strings.Join(missing, ", "))
 	}
+	examples := map[string]string{
+		"username": "your_email@example.com",
+		"password": "your_password",
+		"path":     "your_pikpak_folder_id",
+	}
+	var exampleFields []string
+	if c.Username == examples["username"] {
+		exampleFields = append(exampleFields, "username")
+	}
+	if c.Password == examples["password"] {
+		exampleFields = append(exampleFields, "password")
+	}
+	if c.Path == examples["path"] {
+		exampleFields = append(exampleFields, "path")
+	}
+	if strings.Contains(c.RSS, "your_token_here") {
+		exampleFields = append(exampleFields, "rss")
+	}
+	if len(exampleFields) > 0 {
+		return errors.New("config contains example values: " + strings.Join(exampleFields, ", "))
+	}
 	return nil
 }
