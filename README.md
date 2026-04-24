@@ -2,7 +2,7 @@
 
 Bangumi-PikPak 是基于 [Mikan Project](https://mikanani.me) 和 [PikPak](https://mypikpak.com/) 的自动追番整理下载工具。订阅 Mikan RSS 后，程序会定时检测新番剧条目，下载 torrent，并提交到 PikPak 离线下载。
 
-当前主实现已迁移为 Go。原 Python 单文件实现 `main.py` 暂时保留为 legacy reference，方便对照和回退。
+当前主实现已迁移为 Go，旧 Python 入口和依赖文件已移除。
 
 ## 功能特性
 
@@ -161,3 +161,4 @@ go run ./cmd/bangumi-pikpak -config example.config.json -once
 ## 许可证
 
 MIT，详见 `LICENSE`。
+
