@@ -155,3 +155,7 @@ torrent/
 config.json
 # Local git worktrees
 .worktrees/
+
+# Keep Go source package tracked despite local torrent cache ignore
+!internal/torrent/
+!internal/torrent/**
