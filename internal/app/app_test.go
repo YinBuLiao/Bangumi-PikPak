@@ -1,11 +1,14 @@
 package app
 
 import (
+	"bytes"
 	"context"
+	"log/slog"
 	"net/http"
 	"net/http/httptest"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 
 	"bangumi-pikpak/internal/config"
@@ -32,7 +35,9 @@ func (f *fakePikPak) OfflineDownload(name, fileURL, parentID string) (pikpak.Rem
 	f.offlineCalls++
 	return pikpak.RemoteTask{ID: "task", Name: name}, nil
 }
-
+func testLogger(buf *bytes.Buffer) *slog.Logger {
+	return slog.New(slog.NewTextHandler(buf, &slog.HandlerOptions{Level: slog.LevelInfo}))
+}
 func TestRunOnceNoNewTorrentSkipsLogin(t *testing.T) {
 	dir := t.TempDir()
 	localPath := filepath.Join(dir, "torrent", "Bangumi", "a.torrent")
@@ -101,5 +106,38 @@ func TestRunOnceDuplicateRemoteSkipsOfflineDownload(t *testing.T) {
 	}
 	if pp.loginCalls != 1 || pp.folderCalls != 1 || pp.offlineCalls != 0 {
 		t.Fatalf("call mismatch: %#v", pp)
+	}
+}
+
+func TestRunOnceLogsRSSNewTorrentAndPikPakLogin(t *testing.T) {
+	dir := t.TempDir()
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) { _, _ = w.Write([]byte("torrent")) }))
+	defer server.Close()
+	pp := &fakePikPak{}
+	var logs bytes.Buffer
+	runner := Runner{
+		Config:      config.Config{Username: "user@example.com", Password: "p", Path: "parent", RSS: "rss"},
+		HTTPClient:  server.Client(),
+		Logger:      testLogger(&logs),
+		TorrentRoot: filepath.Join(dir, "torrent"),
+		PikPak:      pp,
+		EntriesFunc: func(context.Context) ([]ResolvedEntry, error) {
+			return []ResolvedEntry{{Entry: rss.Entry{Title: "Episode 01", Link: "l", TorrentURL: server.URL + "/a.torrent"}, BangumiTitle: "Bangumi"}}, nil
+		},
+	}
+	if err := runner.RunOnce(context.Background()); err != nil {
+		t.Fatalf("RunOnce returned error: %v", err)
+	}
+	out := logs.String()
+	for _, want := range []string{
+		"resolved RSS entries",
+		"detected new torrent",
+		"new torrents detected, logging in to PikPak",
+		"PikPak login succeeded",
+		"submitted offline download",
+	} {
+		if !strings.Contains(out, want) {
+			t.Fatalf("expected logs to contain %q, got:\n%s", want, out)
+		}
 	}
 }
