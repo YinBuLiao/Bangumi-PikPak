@@ -3,6 +3,7 @@ package app
 import (
 	"bytes"
 	"context"
+	"errors"
 	"log/slog"
 	"net/http"
 	"net/http/httptest"
@@ -21,9 +22,10 @@ type fakePikPak struct {
 	folderCalls  int
 	offlineCalls int
 	duplicate    bool
+	loginErr     error
 }
 
-func (f *fakePikPak) Login() error { f.loginCalls++; return nil }
+func (f *fakePikPak) Login() error { f.loginCalls++; return f.loginErr }
 func (f *fakePikPak) EnsureFolder(parentID, name string) (string, error) {
 	f.folderCalls++
 	return "folder-id", nil
@@ -139,5 +141,28 @@ func TestRunOnceLogsRSSNewTorrentAndPikPakLogin(t *testing.T) {
 		if !strings.Contains(out, want) {
 			t.Fatalf("expected logs to contain %q, got:\n%s", want, out)
 		}
+	}
+}
+
+func TestRunOnceWrapsPikPakLoginError(t *testing.T) {
+	dir := t.TempDir()
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) { _, _ = w.Write([]byte("torrent")) }))
+	defer server.Close()
+	pp := &fakePikPak{loginErr: errors.New("invalid_argument")}
+	runner := Runner{
+		Config:      config.Config{Username: "user@example.com", Password: "p", Path: "parent", RSS: "rss"},
+		HTTPClient:  server.Client(),
+		TorrentRoot: filepath.Join(dir, "torrent"),
+		PikPak:      pp,
+		EntriesFunc: func(context.Context) ([]ResolvedEntry, error) {
+			return []ResolvedEntry{{Entry: rss.Entry{Title: "Episode 01", Link: "l", TorrentURL: server.URL + "/a.torrent"}, BangumiTitle: "Bangumi"}}, nil
+		},
+	}
+	err := runner.RunOnce(context.Background())
+	if err == nil {
+		t.Fatal("expected error")
+	}
+	if !strings.Contains(err.Error(), "pikpak login") || !strings.Contains(err.Error(), "invalid_argument") {
+		t.Fatalf("expected wrapped login error, got %v", err)
 	}
 }

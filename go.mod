@@ -19,3 +19,5 @@ require (
 	golang.org/x/net v0.33.0 // indirect
 	golang.org/x/text v0.21.0 // indirect
 )
+
+replace github.com/kanghengliu/pikpak-go => ./third_party/pikpak-go

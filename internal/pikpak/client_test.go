@@ -1,6 +1,11 @@
 package pikpak
 
-import "testing"
+import (
+	"encoding/json"
+	"testing"
+
+	pikpakgo "github.com/kanghengliu/pikpak-go"
+)
 
 type fakeAPI struct {
 	files         []RemoteFile
@@ -70,5 +75,22 @@ func TestOfflineDownloadDelegates(t *testing.T) {
 	}
 	if task.ID != "task-id" || api.offlineName != "a.torrent" || api.offlineURL != "https://example.test/a.torrent" || api.offlineParent != "parent" {
 		t.Fatalf("delegate mismatch: task=%#v api=%#v", task, api)
+	}
+}
+
+func TestRequestLoginJSONUsesClientSecretSnakeCase(t *testing.T) {
+	body, err := json.Marshal(pikpakgo.RequestLogin{ClientSecret: "secret"})
+	if err != nil {
+		t.Fatalf("Marshal returned error: %v", err)
+	}
+	var decoded map[string]any
+	if err := json.Unmarshal(body, &decoded); err != nil {
+		t.Fatalf("Unmarshal returned error: %v", err)
+	}
+	if decoded["client_secret"] != "secret" {
+		t.Fatalf("expected client_secret JSON field, got %s", string(body))
+	}
+	if _, ok := decoded["ClientSecret"]; ok {
+		t.Fatalf("unexpected ClientSecret JSON field: %s", string(body))
 	}
 }

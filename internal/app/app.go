@@ -2,6 +2,7 @@ package app
 
 import (
 	"context"
+	"fmt"
 	"log/slog"
 	"net/http"
 	"path/filepath"
@@ -66,7 +67,7 @@ func (r Runner) RunOnce(ctx context.Context) error {
 	r.log().Info("new torrents detected, logging in to PikPak", "count", len(newEntries), "username", r.Config.Username)
 	if err := r.PikPak.Login(); err != nil {
 		r.log().Error("PikPak login failed", "username", r.Config.Username, "error", err)
-		return err
+		return fmt.Errorf("pikpak login: %w", err)
 	}
 	r.log().Info("PikPak login succeeded", "username", r.Config.Username)
 
