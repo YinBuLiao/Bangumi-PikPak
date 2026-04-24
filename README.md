@@ -244,10 +244,10 @@ Error "captcha_invalid" (4002): Aborted - Your operation is too frequent, please
 
 ## Docker
 
-构建镜像：
+Docker Hub 镜像：
 
-```bash
-docker build -t bangumi-pikpak-go .
+```text
+yinbuliao/bangumi-pikpak:latest
 ```
 
 运行容器：
@@ -255,12 +255,36 @@ docker build -t bangumi-pikpak-go .
 ```bash
 docker run -d \
   --name bangumi-pikpak \
+  -p 8080:8080 \
   -v /path/to/data:/app/data \
-  bangumi-pikpak-go
+  --restart unless-stopped \
+  yinbuliao/bangumi-pikpak:latest
 ```
 
-确保 `/path/to/data/.env` 已存在。
+确保宿主机 `/path/to/data/.env` 已存在。容器会读取：
 
+```text
+/app/data/.env
+```
+
+查看日志：
+
+```bash
+docker logs -f bangumi-pikpak
+```
+
+更新镜像：
+
+```bash
+docker pull yinbuliao/bangumi-pikpak:latest
+docker rm -f bangumi-pikpak
+docker run -d \
+  --name bangumi-pikpak \
+  -p 8080:8080 \
+  -v /path/to/data:/app/data \
+  --restart unless-stopped \
+  yinbuliao/bangumi-pikpak:latest
+```
 ## systemd
 
 示例服务文件位于：
@@ -314,4 +338,5 @@ go build .
 ## 许可证
 
 MIT，详见 `LICENSE`。
+
 

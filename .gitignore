@@ -159,6 +159,11 @@ config.json
 # Frontend dependencies
 frontend/node_modules/
 
+# Local packaging output
+dist/
+release/
+releases/
+
 # Keep Go source package tracked despite local torrent cache ignore
 !internal/torrent/
 !internal/torrent/**
