@@ -8,11 +8,18 @@ import (
 	"os"
 	"path"
 	"path/filepath"
+	"time"
 
 	"bangumi-pikpak/internal/sanitize"
 )
 
+const markerFile = ".downloaded"
+
 func LocalPath(root, bangumiTitle, torrentURL string) (string, error) {
+	return LocalEpisodePath(root, bangumiTitle, "", torrentURL)
+}
+
+func LocalEpisodePath(root, bangumiTitle, episodeLabel, torrentURL string) (string, error) {
 	parsed, err := url.Parse(torrentURL)
 	if err != nil {
 		return "", fmt.Errorf("parse torrent url: %w", err)
@@ -21,7 +28,36 @@ func LocalPath(root, bangumiTitle, torrentURL string) (string, error) {
 	if name == "." || name == "/" || name == "" {
 		return "", fmt.Errorf("torrent url has no filename: %s", torrentURL)
 	}
-	return filepath.Join(root, sanitize.Name(bangumiTitle), sanitize.Name(name)), nil
+	parts := []string{root, sanitize.Name(bangumiTitle)}
+	if episodeLabel != "" {
+		parts = append(parts, sanitize.Name(episodeLabel))
+	}
+	parts = append(parts, sanitize.Name(name))
+	return filepath.Join(parts...), nil
+}
+
+func EpisodeDir(root, bangumiTitle, episodeLabel string) string {
+	return filepath.Join(root, sanitize.Name(bangumiTitle), sanitize.Name(episodeLabel))
+}
+
+func MarkerPath(root, bangumiTitle, episodeLabel string) string {
+	return filepath.Join(EpisodeDir(root, bangumiTitle, episodeLabel), markerFile)
+}
+
+func MarkerExists(root, bangumiTitle, episodeLabel string) bool {
+	return Exists(MarkerPath(root, bangumiTitle, episodeLabel))
+}
+
+func MarkDownloaded(root, bangumiTitle, episodeLabel, torrentURL string) error {
+	marker := MarkerPath(root, bangumiTitle, episodeLabel)
+	if err := os.MkdirAll(filepath.Dir(marker), 0o755); err != nil {
+		return fmt.Errorf("create marker dir: %w", err)
+	}
+	content := []byte(fmt.Sprintf("downloaded_at=%s\ntorrent=%s\n", time.Now().Format(time.RFC3339), torrentURL))
+	if err := os.WriteFile(marker, content, 0o600); err != nil {
+		return fmt.Errorf("write marker: %w", err)
+	}
+	return nil
 }
 
 func Exists(path string) bool {

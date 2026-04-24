@@ -70,6 +70,14 @@ func (a *Adapter) HasOriginalURL(parentID, targetURL string) (bool, error) {
 	return false, nil
 }
 
+func (a *Adapter) HasChildren(parentID string) (bool, error) {
+	files, err := a.api.FileListAll(parentID)
+	if err != nil {
+		return false, fmt.Errorf("list pikpak folder: %w", err)
+	}
+	return len(files) > 0, nil
+}
+
 func (a *Adapter) OfflineDownload(name, fileURL, parentID string) (RemoteTask, error) {
 	task, err := a.api.OfflineDownload(name, fileURL, parentID)
 	if err != nil {

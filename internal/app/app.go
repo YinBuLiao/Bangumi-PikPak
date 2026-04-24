@@ -8,6 +8,7 @@ import (
 	"path/filepath"
 
 	"bangumi-pikpak/internal/config"
+	"bangumi-pikpak/internal/episode"
 	"bangumi-pikpak/internal/mikan"
 	"bangumi-pikpak/internal/pikpak"
 	"bangumi-pikpak/internal/rss"
@@ -24,6 +25,7 @@ type PikPakClient interface {
 	Login() error
 	EnsureFolder(parentID, name string) (string, error)
 	HasOriginalURL(parentID, targetURL string) (bool, error)
+	HasChildren(parentID string) (bool, error)
 	OfflineDownload(name, fileURL, parentID string) (pikpak.RemoteTask, error)
 }
 
@@ -36,6 +38,12 @@ type Runner struct {
 	EntriesFunc func(context.Context) ([]ResolvedEntry, error)
 }
 
+type plannedEntry struct {
+	ResolvedEntry
+	EpisodeLabel string
+	LocalPath    string
+}
+
 func (r Runner) RunOnce(ctx context.Context) error {
 	entries, err := r.entries(ctx)
 	if err != nil {
@@ -43,21 +51,34 @@ func (r Runner) RunOnce(ctx context.Context) error {
 	}
 	r.log().Info("resolved RSS entries", "count", len(entries))
 
-	newEntries := make([]ResolvedEntry, 0, len(entries))
-	paths := make(map[string]string, len(entries))
+	newEntries := make([]plannedEntry, 0, len(entries))
+	seenEpisodes := make(map[string]struct{}, len(entries))
 	for _, entry := range entries {
-		localPath, err := torrent.LocalPath(r.torrentRoot(), entry.BangumiTitle, entry.Entry.TorrentURL)
+		episodeLabel, ok := episode.LabelFromTitle(entry.Entry.Title)
+		if !ok {
+			r.log().Warn("skip entry because episode number cannot be parsed", "bangumi", entry.BangumiTitle, "entry", entry.Entry.Title)
+			continue
+		}
+		folderName := sanitize.Name(entry.BangumiTitle)
+		episodeLabel = sanitize.Name(episodeLabel)
+		key := folderName + "\x00" + episodeLabel
+		if _, exists := seenEpisodes[key]; exists {
+			r.log().Info("skip duplicate episode release by RSS order", "bangumi", folderName, "episode", episodeLabel, "entry", entry.Entry.Title, "torrent", entry.Entry.TorrentURL)
+			continue
+		}
+		seenEpisodes[key] = struct{}{}
+
+		if torrent.MarkerExists(r.torrentRoot(), folderName, episodeLabel) {
+			r.log().Info("episode already processed locally", "bangumi", folderName, "episode", episodeLabel)
+			continue
+		}
+		localPath, err := torrent.LocalEpisodePath(r.torrentRoot(), folderName, episodeLabel, entry.Entry.TorrentURL)
 		if err != nil {
 			r.log().Warn("skip entry with invalid torrent url", "title", entry.Entry.Title, "error", err)
 			continue
 		}
-		paths[entry.Entry.TorrentURL] = localPath
-		if !torrent.Exists(localPath) {
-			r.log().Info("detected new torrent", "bangumi", entry.BangumiTitle, "entry", entry.Entry.Title, "torrent", entry.Entry.TorrentURL, "local_path", localPath)
-			newEntries = append(newEntries, entry)
-		} else {
-			r.log().Debug("torrent already cached locally", "bangumi", entry.BangumiTitle, "torrent", entry.Entry.TorrentURL, "local_path", localPath)
-		}
+		r.log().Info("detected new torrent", "bangumi", folderName, "episode", episodeLabel, "entry", entry.Entry.Title, "torrent", entry.Entry.TorrentURL, "local_path", localPath)
+		newEntries = append(newEntries, plannedEntry{ResolvedEntry: entry, EpisodeLabel: episodeLabel, LocalPath: localPath})
 	}
 	if len(newEntries) == 0 {
 		r.log().Info("RSS source has no new updates", "checked", len(entries))
@@ -77,38 +98,62 @@ func (r Runner) RunOnce(ctx context.Context) error {
 			return ctx.Err()
 		default:
 		}
-		localPath := paths[entry.Entry.TorrentURL]
 		folderName := sanitize.Name(entry.BangumiTitle)
-		r.log().Info("processing new bangumi torrent", "bangumi", folderName, "entry", entry.Entry.Title, "torrent", entry.Entry.TorrentURL)
+		r.log().Info("processing new bangumi torrent", "bangumi", folderName, "episode", entry.EpisodeLabel, "entry", entry.Entry.Title, "torrent", entry.Entry.TorrentURL)
 
-		folderID, err := r.PikPak.EnsureFolder(r.Config.Path, folderName)
+		bangumiFolderID, err := r.PikPak.EnsureFolder(r.Config.Path, folderName)
 		if err != nil {
-			r.log().Error("ensure pikpak folder failed", "bangumi", folderName, "error", err)
+			r.log().Error("ensure pikpak bangumi folder failed", "bangumi", folderName, "error", err)
 			continue
 		}
-		r.log().Info("PikPak folder ready", "bangumi", folderName, "folder_id", folderID)
+		r.log().Info("PikPak bangumi folder ready", "bangumi", folderName, "folder_id", bangumiFolderID)
 
-		if err := torrent.Download(r.httpClient(), entry.Entry.TorrentURL, localPath); err != nil {
-			r.log().Error("download torrent failed", "bangumi", folderName, "url", entry.Entry.TorrentURL, "error", err)
+		episodeFolderID, err := r.PikPak.EnsureFolder(bangumiFolderID, entry.EpisodeLabel)
+		if err != nil {
+			r.log().Error("ensure pikpak episode folder failed", "bangumi", folderName, "episode", entry.EpisodeLabel, "error", err)
 			continue
 		}
-		r.log().Info("torrent downloaded", "bangumi", folderName, "local_path", localPath)
+		r.log().Info("PikPak episode folder ready", "bangumi", folderName, "episode", entry.EpisodeLabel, "folder_id", episodeFolderID)
 
-		duplicate, err := r.PikPak.HasOriginalURL(folderID, entry.Entry.TorrentURL)
+		hasChildren, err := r.PikPak.HasChildren(episodeFolderID)
 		if err != nil {
-			r.log().Warn("remote duplicate check failed", "bangumi", folderName, "error", err)
+			r.log().Warn("remote episode folder check failed", "bangumi", folderName, "episode", entry.EpisodeLabel, "error", err)
+		}
+		if hasChildren {
+			r.log().Info("skip episode because remote folder already has files", "bangumi", folderName, "episode", entry.EpisodeLabel)
+			if err := torrent.MarkDownloaded(r.torrentRoot(), folderName, entry.EpisodeLabel, entry.Entry.TorrentURL); err != nil {
+				r.log().Warn("write local episode marker failed", "bangumi", folderName, "episode", entry.EpisodeLabel, "error", err)
+			}
+			continue
+		}
+
+		if err := torrent.Download(r.httpClient(), entry.Entry.TorrentURL, entry.LocalPath); err != nil {
+			r.log().Error("download torrent failed", "bangumi", folderName, "episode", entry.EpisodeLabel, "url", entry.Entry.TorrentURL, "error", err)
+			continue
+		}
+		r.log().Info("torrent downloaded", "bangumi", folderName, "episode", entry.EpisodeLabel, "local_path", entry.LocalPath)
+
+		duplicate, err := r.PikPak.HasOriginalURL(episodeFolderID, entry.Entry.TorrentURL)
+		if err != nil {
+			r.log().Warn("remote duplicate check failed", "bangumi", folderName, "episode", entry.EpisodeLabel, "error", err)
 		}
 		if duplicate {
-			r.log().Info("skip duplicate remote torrent", "bangumi", folderName, "torrent", entry.Entry.TorrentURL)
+			r.log().Info("skip duplicate remote torrent", "bangumi", folderName, "episode", entry.EpisodeLabel, "torrent", entry.Entry.TorrentURL)
+			if err := torrent.MarkDownloaded(r.torrentRoot(), folderName, entry.EpisodeLabel, entry.Entry.TorrentURL); err != nil {
+				r.log().Warn("write local episode marker failed", "bangumi", folderName, "episode", entry.EpisodeLabel, "error", err)
+			}
 			continue
 		}
 
-		name := filepath.Base(localPath)
-		if _, err := r.PikPak.OfflineDownload(name, entry.Entry.TorrentURL, folderID); err != nil {
-			r.log().Error("offline download failed", "bangumi", folderName, "error", err)
+		name := filepath.Base(entry.LocalPath)
+		if _, err := r.PikPak.OfflineDownload(name, entry.Entry.TorrentURL, episodeFolderID); err != nil {
+			r.log().Error("offline download failed", "bangumi", folderName, "episode", entry.EpisodeLabel, "error", err)
 			continue
 		}
-		r.log().Info("submitted offline download", "bangumi", folderName, "torrent", entry.Entry.TorrentURL)
+		if err := torrent.MarkDownloaded(r.torrentRoot(), folderName, entry.EpisodeLabel, entry.Entry.TorrentURL); err != nil {
+			r.log().Warn("write local episode marker failed", "bangumi", folderName, "episode", entry.EpisodeLabel, "error", err)
+		}
+		r.log().Info("submitted offline download", "bangumi", folderName, "episode", entry.EpisodeLabel, "torrent", entry.Entry.TorrentURL)
 	}
 	return nil
 }
