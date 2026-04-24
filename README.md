@@ -1,71 +1,40 @@
 # Bangumi-PikPak
 
-<p align="center">
-    <img title="mikan project" src="https://mikanani.me/images/mikan-pic.png" alt="" width="10%">
-    <img title="pikpak" src="https://raw.githubusercontent.com/YinBuLiao/Bangumi-PikPak/main/img/pikpak.png">
-</p>
+Bangumi-PikPak 是基于 [Mikan Project](https://mikanani.me) 和 [PikPak](https://mypikpak.com/) 的自动追番整理下载工具。订阅 Mikan RSS 后，程序会定时检测新番剧条目，下载 torrent，并提交到 PikPak 离线下载。
 
-***
-## ✨ 新增功能
+当前主实现已迁移为 Go。原 Python 单文件实现 `main.py` 暂时保留为 legacy reference，方便对照和回退。
 
-- 🌐 **代理支持**：支持 HTTP/HTTPS/SOCKS 代理
-- ⚙️ **改进配置**：更好的配置文件管理
-- 📊 **完善日志**：详细的日志记录系统
-- 📚 **项目文档**：完整的安装和使用说明
+## 功能特性
 
----
+- 兼容现有 `config.json` 配置格式
+- 定时解析 Mikan RSS
+- 自动访问 Mikan 条目页提取番剧标题
+- 本地缓存 torrent 到 `torrent/<番剧名>/`
+- 自动登录 PikPak
+- 自动创建 PikPak 番剧文件夹
+- 提交 PikPak 离线下载任务
+- 尽量避免重复提交
+- 支持 HTTP/HTTPS/SOCKS 代理环境变量
+- 控制台日志与 `rss-pikpak.log` 轮转日志
+- 支持单次运行、持续运行、Docker 和 systemd 部署
 
-本项目是基于 [Mikan Project](https://mikanani.me)、[PikPak](https://mypikpak.com/) 的全自动追番整理下载工具。只需要在 [Mikan Project](https://mikanani.me) 上订阅番剧，就可以全自动追番。
+## 环境要求
 
-## ✨ 功能特性
+- Go 1.22 或更高版本
+- 有效 PikPak 账号
+- Mikan Project RSS 订阅链接
 
-- 🚀 **简易配置**：单次配置就能持续使用
-- 🔄 **自动更新**：无需介入的 RSS 解析器，自动解析番组信息
-- 📁 **智能整理**：根据番剧更新时间自动分类整理
-- 🤖 **完全自动化**：无需维护，完全无感使用
-- 🌐 **代理支持**：支持 HTTP/HTTPS/SOCKS 代理
-- 📊 **日志记录**：完整的操作日志，便于问题排查
+Go 版使用 [`github.com/kanghengliu/pikpak-go`](https://pkg.go.dev/github.com/kanghengliu/pikpak-go) 访问 PikPak。
 
-## 🚀 快速开始
+## 配置
 
-### 环境要求
+复制示例配置：
 
-- Python 3.10 或更高版本
-- 有效的 PikPak 账号
-- Mikan Project 的 RSS 订阅链接
-
-### 安装步骤
-
-1. **克隆项目**
 ```bash
-[git clone https://github.com/hrWong/Bangumi-PikPak.git](https://github.com/YinBuLiao/Bangumi-PikPak.git)
-cd Bangumi-PikPak
-```
-
-2. **安装依赖**
-```bash
-pip install -r requirements.txt
-```
-
-3. **配置设置**
-```bash
-# 复制示例配置文件
 cp example.config.json config.json
-
-# 编辑配置文件
-# 填入你的 PikPak 账号信息和 RSS 链接
 ```
 
-4. **运行程序**
-```bash
-python main.py
-```
-
-## ⚙️ 配置说明
-
-### 配置文件格式
-
-编辑 `config.json` 文件：
+编辑 `config.json`：
 
 ```json
 {
@@ -80,135 +49,115 @@ python main.py
 }
 ```
 
-### 配置项说明
+配置项：
 
-| 配置项 | 说明 | 示例 |
-|--------|------|------|
-| `username` | PikPak 账号邮箱 | `user@example.com` |
-| `password` | PikPak 账号密码 | `your_password` |
-| `path` | PikPak 目标文件夹ID | `VOXXWeEex835fv5C2hV5LBe1o2` |
-| `rss` | Mikan RSS 订阅链接 | `https://mikanani.me/RSS/MyBangumi?token=xxx` |
-| `http_proxy` | HTTP 代理地址 | `http://127.0.0.1:7890` |
-| `https_proxy` | HTTPS 代理地址 | `http://127.0.0.1:7890` |
-| `socks_proxy` | SOCKS 代理地址 | `socks5://127.0.0.1:7890` |
-| `enable_proxy` | 是否启用代理 | `true` 或 `false` |
+| 配置项 | 说明 |
+|---|---|
+| `username` | PikPak 账号邮箱 |
+| `password` | PikPak 账号密码 |
+| `path` | PikPak 目标父文件夹 ID |
+| `rss` | Mikan RSS 订阅链接 |
+| `http_proxy` | HTTP 代理地址 |
+| `https_proxy` | HTTPS 代理地址 |
+| `socks_proxy` | SOCKS 代理地址 |
+| `enable_proxy` | 是否启用代理 |
 
-### 获取配置信息
+> `pikpak.json` 在 Go 版中作为运行状态文件使用。由于 Python 版 `pikpakapi` 的 token 序列化格式和 `pikpak-go` 的公开 API 不同，Go 版不保证复用旧 Python token；需要时会用账号密码重新登录。
 
-#### 文件夹ID
-1. 登录 [PikPak](https://mypikpak.com/)
-2. 创建或选择目标文件夹
-3. 从URL中复制文件夹ID：`https://mypikpak.com/drive/folder/文件夹ID`
+## Go 版本运行
 
-#### RSS链接
-1. 在 [Mikan Project](https://mikanani.me) 订阅番剧
-2. 在首页右下角复制 RSS 订阅链接
-3. 格式：`https://mikanani.me/RSS/MyBangumi?token=xxx%3d%3d`
-
-## 📦 打包部署
-
-### 生成可执行文件
+构建：
 
 ```bash
-# 安装 PyInstaller
-pip install pyinstaller
-
-# 打包程序
-pyinstaller --onefile --noconsole main.py
+go build ./cmd/bangumi-pikpak
 ```
 
-### 开机自启动
+运行：
 
-#### Windows
-- 将生成的可执行文件放入启动文件夹
-- 或创建任务计划程序
-
-#### macOS
-- 系统偏好设置 → 用户与群组 → 登录项 → 添加可执行文件
-
-#### Linux
-- 将可执行文件路径添加到 `~/.bashrc`
-- 或创建 systemd 服务
-
-## 🔧 工作原理
-
-### 更新检测流程
-1. **RSS 解析**：定期检查 Mikan RSS 源
-2. **番剧识别**：访问番剧页面提取标题信息
-3. **文件夹管理**：自动创建番剧分类文件夹
-4. **种子处理**：下载种子并上传到 PikPak
-5. **重复检测**：智能避免重复内容
-
-### 文件组织结构
-```
-PikPak 根目录/
-├── 进击的巨人 最终季/
-│   ├── 第1集.torrent
-│   └── 第2集.torrent
-├── 阿松 第四季/
-│   ├── 第1集.torrent
-│   └── 第2集.torrent
-└── ...
-```
-
-## 📝 日志说明
-
-程序运行时会生成详细的日志文件 `rss-pikpak.log`，包含：
-- 配置加载状态
-- 代理设置信息
-- RSS 更新检测
-- 文件操作记录
-- 错误和警告信息
-
-## 🤝 贡献指南
-
-欢迎提交 Issue 和 Pull Request！
-
-### 开发环境设置
 ```bash
-# 克隆项目
-git clone https://github.com/YinBuLiao/Bangumi-PikPak.git
-cd Bangumi-PikPak
-
-# 创建虚拟环境
-python -m venv venv
-source venv/bin/activate  # Linux/macOS
-# 或
-venv\Scripts\activate  # Windows
-
-# 安装开发依赖
-pip install -r requirements.txt
+./bangumi-pikpak -config config.json
 ```
 
-### 代码规范
-- 使用 Python 3.10+ 语法
-- 遵循 PEP 8 代码风格
-- 添加适当的注释和文档字符串
+Windows PowerShell：
 
-## 🐛 常见问题
+```powershell
+.\bangumi-pikpak.exe -config config.json
+```
 
-### Q: 提示"文件夹不存在"错误
-A: 检查配置文件中的 `path` 值是否正确，确保文件夹ID有效
+单次运行，适合测试、cron 或容器任务：
 
-### Q: 代理连接失败
-A: 确认代理地址和端口正确，检查代理服务是否正常运行
+```bash
+go run ./cmd/bangumi-pikpak -config config.json -once
+```
 
-### Q: RSS 更新延迟
-A: Mikan RSS 有一定延迟，请耐心等待，或调整检查间隔时间
+## 常用参数
 
-### Q: 种子重复添加
-A: 程序会自动检测重复内容，如果仍有问题，检查日志文件
+- `-config config.json`：配置文件路径
+- `-interval 600`：RSS 检查间隔，单位秒
+- `-once`：只运行一次后退出
+- `-log rss-pikpak.log`：日志文件路径
+- `-state pikpak.json`：运行状态文件路径
 
-## 📄 许可证
+## Docker
 
-本项目采用 MIT 许可证，详见 [LICENSE](LICENSE) 文件。
+构建镜像：
 
-## 🙏 致谢
+```bash
+docker build -t bangumi-pikpak-go .
+```
 
-- [Mikan Project](https://mikanani.me) - 提供番剧 RSS 源
-- [PikPak](https://mypikpak.com/) - 提供云存储服务
-- [pikpakapi](https://github.com/Quan666/PikPakAPI) - PikPak API 封装
+运行容器：
 
----
+```bash
+docker run -d \
+  --name bangumi-pikpak \
+  -v /path/to/data:/app/data \
+  bangumi-pikpak-go
+```
 
-如果这个项目对你有帮助，请给个 ⭐ Star 支持一下！
+确保 `/path/to/data/config.json` 已存在。
+
+## systemd
+
+示例服务文件位于：
+
+```text
+docs/examples/bangumi-pikpak.service
+```
+
+典型部署路径：
+
+```bash
+sudo mkdir -p /opt/bangumi-pikpak
+sudo cp bangumi-pikpak config.json /opt/bangumi-pikpak/
+sudo cp docs/examples/bangumi-pikpak.service /etc/systemd/system/
+sudo systemctl daemon-reload
+sudo systemctl enable --now bangumi-pikpak
+```
+
+## 工作流程
+
+1. 读取 `config.json`。
+2. 应用代理配置。
+3. 拉取并解析 Mikan RSS。
+4. 访问条目页面读取 `p.bangumi-title`。
+5. 检查本地 torrent 缓存。
+6. 有新 torrent 时登录 PikPak。
+7. 创建或复用番剧文件夹。
+8. 下载 torrent 到本地。
+9. 提交 PikPak 离线下载任务。
+10. 持续运行时等待下一个检查周期。
+
+## 开发验证
+
+```bash
+go test ./...
+go build ./cmd/bangumi-pikpak
+go run ./cmd/bangumi-pikpak -config example.config.json -once
+```
+
+`example.config.json` 只包含示例值，不能用于真实下载。
+
+## 许可证
+
+MIT，详见 `LICENSE`。

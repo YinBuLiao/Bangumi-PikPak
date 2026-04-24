@@ -1,0 +1,16 @@
+[Unit]
+Description=Bangumi-PikPak RSS sync service
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+WorkingDirectory=/opt/bangumi-pikpak
+ExecStart=/opt/bangumi-pikpak/bangumi-pikpak -config /opt/bangumi-pikpak/config.json -log /opt/bangumi-pikpak/rss-pikpak.log
+Restart=on-failure
+RestartSec=30
+User=bangumi-pikpak
+Group=bangumi-pikpak
+
+[Install]
+WantedBy=multi-user.target
