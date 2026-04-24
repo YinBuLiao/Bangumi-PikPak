@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"log/slog"
 	"net/http"
+	"net/url"
 	"path/filepath"
 
 	"bangumi-pikpak/internal/config"
@@ -19,6 +20,8 @@ import (
 type ResolvedEntry struct {
 	Entry        rss.Entry
 	BangumiTitle string
+	CoverURL     string
+	Summary      string
 }
 
 type PikPakClient interface {
@@ -29,12 +32,19 @@ type PikPakClient interface {
 	OfflineDownload(name, fileURL, parentID string) (pikpak.RemoteTask, error)
 }
 
+type EpisodeStore interface {
+	EpisodeProcessed(ctx context.Context, title, label string) (bool, error)
+	MarkEpisodeDownloaded(ctx context.Context, title, label, folderID, torrentURL string) error
+	SaveBangumiMetadata(ctx context.Context, title, coverURL, summary string) error
+}
+
 type Runner struct {
 	Config      config.Config
 	HTTPClient  *http.Client
 	Logger      *slog.Logger
 	TorrentRoot string
 	PikPak      PikPakClient
+	Store       EpisodeStore
 	EntriesFunc func(context.Context) ([]ResolvedEntry, error)
 }
 
@@ -68,8 +78,18 @@ func (r Runner) RunOnce(ctx context.Context) error {
 		}
 		seenEpisodes[key] = struct{}{}
 
-		if torrent.MarkerExists(r.torrentRoot(), folderName, episodeLabel) {
-			r.log().Info("episode already processed locally", "bangumi", folderName, "episode", episodeLabel)
+		processed := false
+		if r.Store != nil {
+			var err error
+			processed, err = r.Store.EpisodeProcessed(ctx, folderName, episodeLabel)
+			if err != nil {
+				r.log().Warn("mysql episode state check failed", "bangumi", folderName, "episode", episodeLabel, "error", err)
+			}
+		} else {
+			processed = torrent.MarkerExists(r.torrentRoot(), folderName, episodeLabel)
+		}
+		if processed {
+			r.log().Info("episode already processed", "bangumi", folderName, "episode", episodeLabel, "state", map[bool]string{true: "mysql", false: "local"}[r.Store != nil])
 			continue
 		}
 		localPath, err := torrent.LocalEpisodePath(r.torrentRoot(), folderName, episodeLabel, entry.Entry.TorrentURL)
@@ -121,17 +141,21 @@ func (r Runner) RunOnce(ctx context.Context) error {
 		}
 		if hasChildren {
 			r.log().Info("skip episode because remote folder already has files", "bangumi", folderName, "episode", entry.EpisodeLabel)
-			if err := torrent.MarkDownloaded(r.torrentRoot(), folderName, entry.EpisodeLabel, entry.Entry.TorrentURL); err != nil {
-				r.log().Warn("write local episode marker failed", "bangumi", folderName, "episode", entry.EpisodeLabel, "error", err)
-			}
+			r.markDownloaded(ctx, folderName, entry.EpisodeLabel, episodeFolderID, entry.Entry.TorrentURL)
 			continue
 		}
 
-		if err := torrent.Download(r.httpClient(), entry.Entry.TorrentURL, entry.LocalPath); err != nil {
-			r.log().Error("download torrent failed", "bangumi", folderName, "episode", entry.EpisodeLabel, "url", entry.Entry.TorrentURL, "error", err)
-			continue
+		if r.Store == nil && !isMagnet(entry.Entry.TorrentURL) {
+			if err := torrent.Download(r.httpClient(), entry.Entry.TorrentURL, entry.LocalPath); err != nil {
+				r.log().Error("download torrent failed", "bangumi", folderName, "episode", entry.EpisodeLabel, "url", entry.Entry.TorrentURL, "error", err)
+				continue
+			}
+			r.log().Info("torrent downloaded", "bangumi", folderName, "episode", entry.EpisodeLabel, "local_path", entry.LocalPath)
+		} else if isMagnet(entry.Entry.TorrentURL) {
+			r.log().Info("magnet source detected; skip local torrent file cache", "bangumi", folderName, "episode", entry.EpisodeLabel)
+		} else {
+			r.log().Info("mysql state enabled; skip local torrent cache", "bangumi", folderName, "episode", entry.EpisodeLabel)
 		}
-		r.log().Info("torrent downloaded", "bangumi", folderName, "episode", entry.EpisodeLabel, "local_path", entry.LocalPath)
 
 		duplicate, err := r.PikPak.HasOriginalURL(episodeFolderID, entry.Entry.TorrentURL)
 		if err != nil {
@@ -139,9 +163,7 @@ func (r Runner) RunOnce(ctx context.Context) error {
 		}
 		if duplicate {
 			r.log().Info("skip duplicate remote torrent", "bangumi", folderName, "episode", entry.EpisodeLabel, "torrent", entry.Entry.TorrentURL)
-			if err := torrent.MarkDownloaded(r.torrentRoot(), folderName, entry.EpisodeLabel, entry.Entry.TorrentURL); err != nil {
-				r.log().Warn("write local episode marker failed", "bangumi", folderName, "episode", entry.EpisodeLabel, "error", err)
-			}
+			r.markDownloaded(ctx, folderName, entry.EpisodeLabel, episodeFolderID, entry.Entry.TorrentURL)
 			continue
 		}
 
@@ -150,8 +172,9 @@ func (r Runner) RunOnce(ctx context.Context) error {
 			r.log().Error("offline download failed", "bangumi", folderName, "episode", entry.EpisodeLabel, "error", err)
 			continue
 		}
-		if err := torrent.MarkDownloaded(r.torrentRoot(), folderName, entry.EpisodeLabel, entry.Entry.TorrentURL); err != nil {
-			r.log().Warn("write local episode marker failed", "bangumi", folderName, "episode", entry.EpisodeLabel, "error", err)
+		r.markDownloaded(ctx, folderName, entry.EpisodeLabel, episodeFolderID, entry.Entry.TorrentURL)
+		if entry.CoverURL != "" || entry.Summary != "" {
+			r.saveMetadata(ctx, folderName, entry.CoverURL, entry.Summary)
 		}
 		r.log().Info("submitted offline download", "bangumi", folderName, "episode", entry.EpisodeLabel, "torrent", entry.Entry.TorrentURL)
 	}
@@ -176,13 +199,13 @@ func (r Runner) entries(ctx context.Context) ([]ResolvedEntry, error) {
 			return nil, ctx.Err()
 		default:
 		}
-		title, err := mikan.FetchTitle(r.httpClient(), entry.Link)
+		meta, err := mikan.FetchEpisodeMetadata(r.httpClient(), entry.Link)
 		if err != nil {
 			r.log().Warn("skip entry because mikan title cannot be resolved", "entry", entry.Title, "error", err)
 			continue
 		}
-		r.log().Info("recognized bangumi", "entry", entry.Title, "bangumi", title, "torrent", entry.TorrentURL)
-		resolved = append(resolved, ResolvedEntry{Entry: entry, BangumiTitle: title})
+		r.log().Info("recognized bangumi", "entry", entry.Title, "bangumi", meta.Title, "torrent", entry.TorrentURL)
+		resolved = append(resolved, ResolvedEntry{Entry: entry, BangumiTitle: meta.Title, CoverURL: meta.CoverURL})
 	}
 	return resolved, nil
 }
@@ -206,4 +229,33 @@ func (r Runner) log() *slog.Logger {
 		return r.Logger
 	}
 	return slog.Default()
+}
+
+func (r Runner) markDownloaded(ctx context.Context, folderName, episodeLabel, episodeFolderID, torrentURL string) {
+	if r.Store != nil {
+		if err := r.Store.MarkEpisodeDownloaded(ctx, folderName, episodeLabel, episodeFolderID, torrentURL); err != nil {
+			r.log().Warn("write mysql episode state failed", "bangumi", folderName, "episode", episodeLabel, "error", err)
+		}
+		return
+	}
+	if err := torrent.MarkDownloaded(r.torrentRoot(), folderName, episodeLabel, torrentURL); err != nil {
+		r.log().Warn("write local episode marker failed", "bangumi", folderName, "episode", episodeLabel, "error", err)
+	}
+}
+
+func (r Runner) saveMetadata(ctx context.Context, folderName, coverURL, summary string) {
+	if r.Store != nil {
+		if err := r.Store.SaveBangumiMetadata(ctx, folderName, coverURL, summary); err != nil {
+			r.log().Warn("write mysql bangumi metadata failed", "bangumi", folderName, "error", err)
+		}
+		return
+	}
+	if err := torrent.SaveBangumiMetadata(r.torrentRoot(), folderName, torrent.BangumiMetadata{Title: folderName, CoverURL: coverURL, Summary: summary}); err != nil {
+		r.log().Warn("write bangumi metadata failed", "bangumi", folderName, "error", err)
+	}
+}
+
+func isMagnet(raw string) bool {
+	u, err := url.Parse(raw)
+	return err == nil && u.Scheme == "magnet"
 }

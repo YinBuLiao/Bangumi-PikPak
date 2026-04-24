@@ -156,6 +156,9 @@ config.json
 # Local git worktrees
 .worktrees/
 
+# Frontend dependencies
+frontend/node_modules/
+
 # Keep Go source package tracked despite local torrent cache ignore
 !internal/torrent/
 !internal/torrent/**

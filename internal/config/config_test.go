@@ -36,6 +36,32 @@ func TestLoadExistingConfig(t *testing.T) {
 	}
 }
 
+func TestLoadEnvConfig(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, ".env")
+	data := `
+USERNAME="user@example.com"
+PASSWORD="secret"
+PATH="folder-id"
+RSS="https://mikanani.me/RSS/MyBangumi?token=abc"
+HTTP_PROXY="http://127.0.0.1:7890"
+ENABLE_PROXY=true
+MYSQL_PORT=3306
+REDIS_ADDR="127.0.0.1:6379"
+REDIS_DB=1
+`
+	if err := os.WriteFile(path, []byte(data), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	cfg, err := Load(path)
+	if err != nil {
+		t.Fatalf("Load returned error: %v", err)
+	}
+	if cfg.Username != "user@example.com" || cfg.Path != "folder-id" || !cfg.EnableProxy || cfg.MySQLPort != 3306 || cfg.RedisDB != 1 {
+		t.Fatalf("env config mismatch: %#v", cfg)
+	}
+}
+
 func TestValidateRejectsMissingRequiredFields(t *testing.T) {
 	cfg := Config{Username: "user@example.com", Password: "secret"}
 	err := cfg.Validate()
@@ -59,6 +85,22 @@ func TestSaveRoundTrip(t *testing.T) {
 		t.Fatalf("Load returned error: %v", err)
 	}
 	if loaded.Username != cfg.Username || loaded.Password != cfg.Password || loaded.Path != cfg.Path || loaded.RSS != cfg.RSS || loaded.HTTPProxy != cfg.HTTPProxy || loaded.EnableProxy != cfg.EnableProxy {
+		t.Fatalf("round trip mismatch: %#v", loaded)
+	}
+}
+
+func TestSaveEnvRoundTrip(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, ".env")
+	cfg := Config{Username: "user@example.com", Password: "secret", Path: "folder-id", RSS: "https://example.test/rss", HTTPProxy: "http://127.0.0.1:7890", EnableProxy: true, RedisAddr: "127.0.0.1:6379"}
+	if err := Save(path, cfg); err != nil {
+		t.Fatalf("Save returned error: %v", err)
+	}
+	loaded, err := Load(path)
+	if err != nil {
+		t.Fatalf("Load returned error: %v", err)
+	}
+	if loaded.Username != cfg.Username || loaded.Password != cfg.Password || loaded.Path != cfg.Path || loaded.RSS != cfg.RSS || loaded.HTTPProxy != cfg.HTTPProxy || !loaded.EnableProxy || loaded.RedisAddr != cfg.RedisAddr {
 		t.Fatalf("round trip mismatch: %#v", loaded)
 	}
 }

@@ -29,6 +29,7 @@ func (f *fakeAPI) OfflineDownload(name, fileURL, parentID string) (RemoteTask, e
 	f.offlineParent = parentID
 	return RemoteTask{ID: "task-id", Name: name}, nil
 }
+func (f *fakeAPI) GetDownloadUrl(id string) (string, error) { return "https://example.test/" + id, nil }
 
 func TestEnsureFolderReturnsExisting(t *testing.T) {
 	api := &fakeAPI{files: []RemoteFile{{ID: "existing", Name: "Bangumi", Kind: KindFolder}}}

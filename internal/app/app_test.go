@@ -99,6 +99,32 @@ func TestRunOnceNewTorrentSubmitsOfflineTask(t *testing.T) {
 	}
 }
 
+func TestRunOnceSavesBangumiCoverMetadata(t *testing.T) {
+	dir := t.TempDir()
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) { _, _ = w.Write([]byte("torrent")) }))
+	defer server.Close()
+	pp := &fakePikPak{}
+	runner := Runner{
+		Config:      config.Config{Username: "u", Password: "p", Path: "parent", RSS: "rss"},
+		HTTPClient:  server.Client(),
+		TorrentRoot: filepath.Join(dir, "torrent"),
+		PikPak:      pp,
+		EntriesFunc: func(context.Context) ([]ResolvedEntry, error) {
+			return []ResolvedEntry{{Entry: rss.Entry{Title: "Episode 01", Link: "l", TorrentURL: server.URL + "/a.torrent"}, BangumiTitle: "Bangumi", CoverURL: "https://example.test/cover.webp"}}, nil
+		},
+	}
+	if err := runner.RunOnce(context.Background()); err != nil {
+		t.Fatalf("RunOnce returned error: %v", err)
+	}
+	b, err := os.ReadFile(filepath.Join(dir, "torrent", "Bangumi", ".metadata.json"))
+	if err != nil {
+		t.Fatalf("expected metadata file: %v", err)
+	}
+	if !strings.Contains(string(b), "cover.webp") {
+		t.Fatalf("metadata content mismatch: %s", string(b))
+	}
+}
+
 func TestRunOnceDuplicateRemoteSkipsOfflineDownload(t *testing.T) {
 	dir := t.TempDir()
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) { _, _ = w.Write([]byte("torrent")) }))

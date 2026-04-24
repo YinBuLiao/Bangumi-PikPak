@@ -5,6 +5,7 @@ import (
 	"net/http/httptest"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 )
 
@@ -16,6 +17,16 @@ func TestLocalPathUsesTorrentFilename(t *testing.T) {
 	want := filepath.Join("torrent", "进击_巨人", "abc123.torrent")
 	if path != want {
 		t.Fatalf("path mismatch: got %q want %q", path, want)
+	}
+}
+
+func TestLocalEpisodePathSupportsMagnet(t *testing.T) {
+	got, err := LocalEpisodePath("torrent", "测试番剧", "第01集", "magnet:?xt=urn:btih:abcdef")
+	if err != nil {
+		t.Fatalf("LocalEpisodePath returned error: %v", err)
+	}
+	if !strings.HasSuffix(got, ".magnet") || !strings.Contains(got, "第01集") {
+		t.Fatalf("magnet local path mismatch: %s", got)
 	}
 }
 
@@ -50,5 +61,20 @@ func TestDownload(t *testing.T) {
 	}
 	if string(b) != "torrent-data" {
 		t.Fatalf("content mismatch: %q", string(b))
+	}
+}
+
+func TestBangumiMetadataRoundTrip(t *testing.T) {
+	dir := t.TempDir()
+	meta := BangumiMetadata{Title: "测试番剧", CoverURL: "https://example.test/cover.webp", Summary: "来自 Bangumi.tv 的简介"}
+	if err := SaveBangumiMetadata(dir, "测试番剧", meta); err != nil {
+		t.Fatalf("SaveBangumiMetadata returned error: %v", err)
+	}
+	got, err := LoadBangumiMetadata(dir, "测试番剧")
+	if err != nil {
+		t.Fatalf("LoadBangumiMetadata returned error: %v", err)
+	}
+	if got.Title != meta.Title || got.CoverURL != meta.CoverURL || got.Summary != meta.Summary {
+		t.Fatalf("metadata mismatch: %#v", got)
 	}
 }

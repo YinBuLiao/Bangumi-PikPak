@@ -9,11 +9,18 @@ import (
 const KindFolder = "drive#folder"
 
 type RemoteFile struct {
-	ID          string
-	Name        string
-	Kind        string
-	OriginalURL string
-	ParamURL    string
+	ID             string
+	Name           string
+	Kind           string
+	OriginalURL    string
+	ParamURL       string
+	ParentID       string
+	Size           int64
+	MimeType       string
+	FileCategory   string
+	FileExtension  string
+	ThumbnailLink  string
+	WebContentLink string
 }
 
 type RemoteTask struct {
@@ -26,6 +33,7 @@ type API interface {
 	FileListAll(parentID string) ([]RemoteFile, error)
 	CreateFolder(name, parentID string) (RemoteFile, error)
 	OfflineDownload(name, fileURL, parentID string) (RemoteTask, error)
+	GetDownloadUrl(id string) (string, error)
 }
 
 type Adapter struct {
@@ -38,6 +46,14 @@ func NewAdapter(api API) *Adapter {
 
 func (a *Adapter) Login() error {
 	return a.api.Login()
+}
+
+func (a *Adapter) List(parentID string) ([]RemoteFile, error) {
+	return a.api.FileListAll(parentID)
+}
+
+func (a *Adapter) DownloadURL(id string) (string, error) {
+	return a.api.GetDownloadUrl(id)
 }
 
 func (a *Adapter) EnsureFolder(parentID, name string) (string, error) {
@@ -109,7 +125,19 @@ func (g *GoAPI) FileListAll(parentID string) ([]RemoteFile, error) {
 	}
 	out := make([]RemoteFile, 0, len(files))
 	for _, file := range files {
-		remote := RemoteFile{ID: file.ID, Name: file.Name, Kind: file.Kind, OriginalURL: file.OriginalURL}
+		remote := RemoteFile{
+			ID:             file.ID,
+			Name:           file.Name,
+			Kind:           file.Kind,
+			OriginalURL:    file.OriginalURL,
+			ParentID:       file.ParentID,
+			Size:           file.Size,
+			MimeType:       file.MimeType,
+			FileCategory:   file.FileCategory,
+			FileExtension:  file.FileExtension,
+			ThumbnailLink:  file.ThumbnailLink,
+			WebContentLink: file.WebContentLink,
+		}
 		if file.Params != nil {
 			remote.ParamURL = file.Params.URL
 		}
@@ -135,4 +163,23 @@ func (g *GoAPI) OfflineDownload(name, fileURL, parentID string) (RemoteTask, err
 		return RemoteTask{}, nil
 	}
 	return RemoteTask{ID: task.Task.ID, Name: task.Task.Name}, nil
+}
+
+func (g *GoAPI) GetDownloadUrl(id string) (string, error) {
+	file, err := g.client.GetFile(id)
+	if err != nil {
+		return "", err
+	}
+	for _, media := range file.Medias {
+		if media != nil && media.Link != nil && media.Link.URL != "" {
+			return media.Link.URL, nil
+		}
+	}
+	if file.WebContentLink != "" {
+		return file.WebContentLink, nil
+	}
+	if file.Links != nil && file.Links.ApplicationOctetStream != nil {
+		return file.Links.ApplicationOctetStream.URL, nil
+	}
+	return "", fmt.Errorf("pikpak file %s has no playable download URL", id)
 }

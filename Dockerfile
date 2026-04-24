@@ -8,7 +8,7 @@ RUN CGO_ENABLED=0 GOOS=linux go build -o /out/bangumi-pikpak .
 FROM alpine:3.20
 WORKDIR /app
 COPY --from=build /out/bangumi-pikpak /usr/local/bin/bangumi-pikpak
-COPY example.config.json /app/example.config.json
+COPY .env.example /app/.env.example
 VOLUME ["/app/data"]
-CMD ["bangumi-pikpak", "-config", "/app/data/config.json", "-log", "/app/data/rss-pikpak.log"]
+CMD ["bangumi-pikpak", "-config", "/app/data/.env", "-log", "/app/data/rss-pikpak.log"]
 
