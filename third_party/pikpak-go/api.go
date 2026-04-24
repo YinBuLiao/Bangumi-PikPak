@@ -15,41 +15,62 @@ import (
 )
 
 const (
-	ClientId        = "YUMx5nI8ZU8Ap8pm"
-	ClientSecret    = "dbw2OtmVEeuUvIptb1Coygx"
+	ClientId        = "YNxT9w7GMdWvEOKa"
+	ClientSecret    = "dbw2OtmVEeuUvIptb1Coyg"
 	GrantType       = "password"
 	PikpakUserHost  = "https://user.mypikpak.com"
 	PikpakDriveHost = "https://api-drive.mypikpak.com"
-	PackageName     = `mypikpak.com`
-	ClientVersion   = `1.0.0`
+	PackageName     = `com.pikcloud.pikpak`
+	ClientVersion   = `1.47.1`
 
 	// AlgoObjectsString this is information from pikpak website js file. searching keyword: calculateCaptchaSign
 	// https://mypikpak.com/drive/main.e3f02a36.js
 	AlgoObjectsString = `
 	[{
 		"alg": "md5",
-		"salt": "mg3UtlOJ5/6WjxHsGXtAthe"
+		"salt": "Gez0T9ijiI9WCeTsKSg3SMlx"
 	}, {
 		"alg": "md5",
-		"salt": "kRG2RIlL/eScz3oDbzeF1"
+		"salt": "zQdbalsolyb1R/"
 	}, {
 		"alg": "md5",
-		"salt": "uOIOBDcR5QALlRUUK4JVoreEI0i3RG8ZiUf2hMOH"
+		"salt": "ftOjr52zt51JD68C3s"
 	}, {
 		"alg": "md5",
-		"salt": "wa+0OkzHAzpyZ0S/JAnHmF2BlMR9Y"
+		"salt": "yeOBMH0JkbQdEFNNwQ0RI9T3wU/v"
 	}, {
 		"alg": "md5",
-		"salt": "ZWV2OkSLoNkmbr58v0f6U3udtqUNP7XON"
+		"salt": "BRJrQZiTQ65WtMvwO"
 	}, {
 		"alg": "md5",
-		"salt": "Jg4cDxtvbmlakZIOpQN0oY1P0eYkA4xquMY9/xqwZE5sjrcHwufR"
+		"salt": "je8fqxKPdQVJiy1DM6Bc9Nb1"
 	}, {
 		"alg": "md5",
-		"salt": "XHfs"
+		"salt": "niV"
 	}, {
 		"alg": "md5",
-		"salt": "S4/mRgYpWyNGEUxVsYBw8n//zlywe5Ga1R8ffWJSOPZnMqWb4w"
+		"salt": "9hFCW2R1"
+	}, {
+		"alg": "md5",
+		"salt": "sHKHpe2i96"
+	}, {
+		"alg": "md5",
+		"salt": "p7c5E6AcXQ/IJUuAEC9W6"
+	}, {
+		"alg": "md5",
+		"salt": ""
+	}, {
+		"alg": "md5",
+		"salt": "aRv9hjc9P+Pbn+u3krN6"
+	}, {
+		"alg": "md5",
+		"salt": "BzStcgE8qVdqjEH16l4"
+	}, {
+		"alg": "md5",
+		"salt": "SqgeZvL5j9zoHP95xWHt"
+	}, {
+		"alg": "md5",
+		"salt": "zVof5yaJkPe3VFpadPof"
 	}]
 `
 )
@@ -117,18 +138,29 @@ func NewPikPakClient(username, password string) (*PikPakClient, error) {
 }
 
 func (c *PikPakClient) Login() error {
+	loginURL := fmt.Sprintf("%s/v1/auth/signin", PikpakUserHost)
+	captchaMeta := CaptchaMeta{}
+	if strings.Contains(c.username, "@") {
+		captchaMeta.Email = c.username
+	} else {
+		captchaMeta.Username = c.username
+	}
+	if err := c.CaptchaTokenWithMeta("POST:"+loginURL, captchaMeta); err != nil {
+		return err
+	}
 	req := RequestLogin{
 		ClientId:     ClientId,
 		ClientSecret: ClientSecret,
 		Username:     c.username,
 		Password:     c.password,
-		GrantType:    GrantType,
+		CaptchaToken: c.captchaToken,
 	}
 	resp := ResponseLogin{}
 	originResp, err := c.client.R().
 		SetBody(&req).
 		SetResult(&resp).
-		Post(fmt.Sprintf("%s/v1/auth/token", PikpakUserHost))
+		SetHeader("Content-Type", "application/json; charset=utf-8").
+		Post(loginURL)
 	if err != nil {
 		return err
 	}
@@ -610,24 +642,28 @@ func (c *PikPakClient) About() (*About, error) {
 }
 
 func (c *PikPakClient) CaptchaToken(action string) error {
+	return c.CaptchaTokenWithMeta(action, CaptchaMeta{})
+}
+
+func (c *PikPakClient) CaptchaTokenWithMeta(action string, meta CaptchaMeta) error {
 	ts := fmt.Sprintf("%d", time.Now().UnixMilli())
 	sign := ClientId + ClientVersion + PackageName + c.deviceId + ts
 	for _, algo := range AlgoObjects {
 		sign = fmt.Sprintf("%x", md5.Sum([]byte(sign+algo.Salt)))
 	}
 	sign = "1." + sign
+	meta.CaptchaSign = sign
+	meta.ClientVersion = ClientVersion
+	meta.PackageName = PackageName
+	meta.Timestamp = ts
+	if meta.UserID == "" {
+		meta.UserID = c.sub
+	}
 	req := RequestGetCaptcha{
 		Action:   action,
 		ClientID: ClientId,
 		DeviceID: c.deviceId,
-		Meta: CaptchaMeta{
-			CaptchaSign:   sign,
-			ClientVersion: ClientVersion,
-			PackageName:   PackageName,
-			Timestamp:     ts,
-			UserID:        c.sub,
-		},
-		RedirectURI: "https://api.mypikpak.com/v1/auth/callback",
+		Meta:     meta,
 	}
 	resp := ResponseGetCaptcha{}
 	originResp, err := c.client.R().

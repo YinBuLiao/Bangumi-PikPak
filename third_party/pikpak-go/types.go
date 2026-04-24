@@ -474,6 +474,7 @@ type RequestLogin struct {
 	Username     string `json:"username,omitempty"`
 	Password     string `json:"password,omitempty"`
 	GrantType    string `json:"grant_type,omitempty"`
+	CaptchaToken string `json:"captcha_token,omitempty"`
 }
 
 type ResponseLogin struct {
@@ -486,18 +487,20 @@ type RequestLogout struct {
 	Token string `json:"token,omitempty"`
 }
 type CaptchaMeta struct {
-	CaptchaSign   string `json:"captcha_sign"`
-	ClientVersion string `json:"client_version"`
-	PackageName   string `json:"package_name"`
-	Timestamp     string `json:"timestamp"`
-	UserID        string `json:"user_id"`
+	CaptchaSign   string `json:"captcha_sign,omitempty"`
+	ClientVersion string `json:"client_version,omitempty"`
+	PackageName   string `json:"package_name,omitempty"`
+	Timestamp     string `json:"timestamp,omitempty"`
+	UserID        string `json:"user_id,omitempty"`
+	Email         string `json:"email,omitempty"`
+	Username      string `json:"username,omitempty"`
 }
 type RequestGetCaptcha struct {
 	Action      string      `json:"action"`
 	ClientID    string      `json:"client_id"`
 	DeviceID    string      `json:"device_id"`
 	Meta        CaptchaMeta `json:"meta"`
-	RedirectURI string      `json:"redirect_uri"`
+	RedirectURI string      `json:"redirect_uri,omitempty"`
 }
 
 type ResponseGetCaptcha struct {

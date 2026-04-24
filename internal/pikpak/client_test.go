@@ -78,8 +78,8 @@ func TestOfflineDownloadDelegates(t *testing.T) {
 	}
 }
 
-func TestRequestLoginJSONUsesClientSecretSnakeCase(t *testing.T) {
-	body, err := json.Marshal(pikpakgo.RequestLogin{ClientSecret: "secret"})
+func TestRequestLoginJSONIncludesCaptchaTokenForSignin(t *testing.T) {
+	body, err := json.Marshal(pikpakgo.RequestLogin{ClientId: "client", ClientSecret: "secret", Username: "user", Password: "pass", CaptchaToken: "captcha"})
 	if err != nil {
 		t.Fatalf("Marshal returned error: %v", err)
 	}
@@ -87,10 +87,10 @@ func TestRequestLoginJSONUsesClientSecretSnakeCase(t *testing.T) {
 	if err := json.Unmarshal(body, &decoded); err != nil {
 		t.Fatalf("Unmarshal returned error: %v", err)
 	}
-	if decoded["client_secret"] != "secret" {
-		t.Fatalf("expected client_secret JSON field, got %s", string(body))
+	if decoded["client_id"] != "client" || decoded["client_secret"] != "secret" || decoded["captcha_token"] != "captcha" {
+		t.Fatalf("signin JSON fields mismatch: %s", string(body))
 	}
-	if _, ok := decoded["ClientSecret"]; ok {
-		t.Fatalf("unexpected ClientSecret JSON field: %s", string(body))
+	if _, ok := decoded["grant_type"]; ok {
+		t.Fatalf("signin request should not include grant_type: %s", string(body))
 	}
 }
