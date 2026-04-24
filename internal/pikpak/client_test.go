@@ -94,3 +94,20 @@ func TestRequestLoginJSONIncludesCaptchaTokenForSignin(t *testing.T) {
 		t.Fatalf("signin request should not include grant_type: %s", string(body))
 	}
 }
+
+func TestRequestNewTaskWithParentOmitsFolderTypeDownload(t *testing.T) {
+	body, err := json.Marshal(pikpakgo.RequestNewTask{ParentID: "folder-id", FolderType: ""})
+	if err != nil {
+		t.Fatalf("Marshal returned error: %v", err)
+	}
+	var decoded map[string]any
+	if err := json.Unmarshal(body, &decoded); err != nil {
+		t.Fatalf("Unmarshal returned error: %v", err)
+	}
+	if decoded["parent_id"] != "folder-id" {
+		t.Fatalf("expected parent_id, got %s", string(body))
+	}
+	if _, ok := decoded["folder_type"]; ok {
+		t.Fatalf("folder_type must be omitted when parent_id is set, got %s", string(body))
+	}
+}

@@ -311,9 +311,9 @@ func (c *PikPakClient) GetDownloadUrl(id string) (string, error) {
 }
 
 func (c *PikPakClient) OfflineDownload(name string, fileUrl string, parentId string) (*NewTask, error) {
-	folderType := ""
+	folderType := FolderTypeDownload
 	if parentId != "" {
-		folderType = FolderTypeDownload
+		folderType = ""
 	}
 	req := RequestNewTask{
 		Kind:       KindOfFile,
