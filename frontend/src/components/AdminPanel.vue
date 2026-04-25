@@ -136,6 +136,19 @@ async function confirmDeleteEpisode() {
 <template>
   <section class="admin-screen admin-console-screen">
   <aside class="admin-sidebar-panel">
+    <div class="admin-mobile-head">
+      <button type="button" class="admin-mobile-home" @click="goHome">‹</button>
+      <strong class="brand-wordmark">Anime<span>X</span></strong>
+      <button type="button" class="admin-mobile-user" :class="{ open: adminUserMenuOpen }" @click="adminUserMenuOpen = !adminUserMenuOpen">
+        <span class="sidebar-avatar">{{ (authUser || 'A').slice(0, 1).toUpperCase() }}</span>
+        <span>{{ authUser || 'admin' }}</span>
+        <b>⌄</b>
+      </button>
+      <div v-if="adminUserMenuOpen" class="admin-user-menu admin-mobile-user-menu" @click.stop>
+        <button type="button" @click="openPasswordModal(); adminUserMenuOpen = false">修改密码</button>
+        <button type="button" class="danger" @click="logout">退出登录</button>
+      </div>
+    </div>
     <div class="admin-brand">
         <strong class="brand-wordmark">Anime<span>X</span></strong>
     </div>

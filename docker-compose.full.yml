@@ -1,0 +1,107 @@
+services:
+  mysql-secret-init:
+    image: alpine:3.20
+    container_name: animex-mysql-secret-init
+    restart: "no"
+    volumes:
+      - ./docker-data/secrets:/secrets
+    command:
+      - sh
+      - -eu
+      - -c
+      - |
+        mkdir -p /secrets
+        if [ ! -s /secrets/mysql_password.txt ]; then
+          tr -dc 'A-Za-z0-9' < /dev/urandom | head -c 24 > /secrets/mysql_password.txt
+        fi
+        if [ ! -s /secrets/mysql_root_password.txt ]; then
+          tr -dc 'A-Za-z0-9' < /dev/urandom | head -c 32 > /secrets/mysql_root_password.txt
+        fi
+        if [ ! -s /secrets/admin_password.txt ]; then
+          tr -dc 'A-Za-z0-9' < /dev/urandom | head -c 16 > /secrets/admin_password.txt
+        fi
+        chmod 600 /secrets/mysql_password.txt /secrets/mysql_root_password.txt /secrets/admin_password.txt
+        echo "AnimeX Docker 一体化环境凭据："
+        echo "  Web URL: http://127.0.0.1:8080"
+        echo "  Admin Username: admin"
+        printf "  Admin Password: "
+        cat /secrets/admin_password.txt
+        echo ""
+        echo "  MySQL Host: mysql"
+        echo "  MySQL Port: 3306"
+        echo "  MySQL Database: animex"
+        echo "  MySQL Username: animex"
+        printf "  MySQL Password: "
+        cat /secrets/mysql_password.txt
+        echo ""
+        echo "  Redis Address: redis:6379"
+        echo "凭据也已保存到宿主机 ./docker-data/secrets/ 目录。"
+
+  mysql:
+    image: mysql:8.4
+    container_name: animex-mysql
+    restart: unless-stopped
+    depends_on:
+      mysql-secret-init:
+        condition: service_completed_successfully
+    environment:
+      MYSQL_DATABASE: animex
+      MYSQL_USER: animex
+      MYSQL_PASSWORD_FILE: /run/secrets/mysql_password.txt
+      MYSQL_ROOT_PASSWORD_FILE: /run/secrets/mysql_root_password.txt
+      TZ: Asia/Shanghai
+    command:
+      - --character-set-server=utf8mb4
+      - --collation-server=utf8mb4_unicode_ci
+      - --default-time-zone=+08:00
+    volumes:
+      - ./docker-data/mysql:/var/lib/mysql
+      - ./docker-data/secrets:/run/secrets:ro
+    healthcheck:
+      test: ["CMD-SHELL", "mysqladmin ping -h 127.0.0.1 -u$${MYSQL_USER} -p$$(cat /run/secrets/mysql_password.txt) --silent"]
+      interval: 10s
+      timeout: 5s
+      retries: 20
+
+  redis:
+    image: redis:7-alpine
+    container_name: animex-redis
+    restart: unless-stopped
+    command: ["redis-server", "--appendonly", "yes"]
+    volumes:
+      - ./docker-data/redis:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 20
+
+  animex:
+    image: yinbuliao/bangumi-pikpak:latest
+    container_name: animex
+    restart: unless-stopped
+    depends_on:
+      mysql:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    environment:
+      TZ: Asia/Shanghai
+      ANIMEX_AUTO_INSTALL: "true"
+      ANIMEX_SKIP_DB_INSTALL_STEPS: "true"
+      ANIMEX_ADMIN_USERNAME: admin
+      ANIMEX_ADMIN_PASSWORD_FILE: /run/secrets/admin_password.txt
+      ANIMEX_MYSQL_HOST: mysql
+      ANIMEX_MYSQL_PORT: "3306"
+      ANIMEX_MYSQL_DATABASE: animex
+      ANIMEX_MYSQL_USERNAME: animex
+      ANIMEX_MYSQL_PASSWORD_FILE: /run/secrets/mysql_password.txt
+      ANIMEX_REDIS_ADDR: redis:6379
+      ANIMEX_REDIS_DB: "0"
+      ANIMEX_STORAGE_PROVIDER: local
+      ANIMEX_LOCAL_STORAGE_PATH: /app/data/downloads
+    ports:
+      - "8080:8080"
+    volumes:
+      - ./docker-data/animex:/app/data
+      - ./docker-data/secrets:/run/secrets:ro

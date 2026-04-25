@@ -1,0 +1,11 @@
+.git
+config.json
+torrent/
+data/
+docker-data/
+docs/
+dist/
+frontend/node_modules/
+frontend/dist/
+*.exe
+*.log
