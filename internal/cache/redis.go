@@ -63,3 +63,10 @@ func (c *RedisCache) SetJSON(ctx context.Context, key string, value any, ttl tim
 	}
 	return c.client.Set(ctx, c.prefix+key, raw, ttl).Err()
 }
+
+func (c *RedisCache) Delete(ctx context.Context, key string) error {
+	if c == nil || c.client == nil || strings.TrimSpace(key) == "" {
+		return nil
+	}
+	return c.client.Del(ctx, c.prefix+key).Err()
+}

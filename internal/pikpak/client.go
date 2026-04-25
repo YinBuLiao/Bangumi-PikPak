@@ -1,7 +1,10 @@
 package pikpak
 
 import (
+	"encoding/base64"
+	"encoding/json"
 	"fmt"
+	"strings"
 
 	pikpakgo "github.com/kanghengliu/pikpak-go"
 )
@@ -34,6 +37,8 @@ type API interface {
 	CreateFolder(name, parentID string) (RemoteFile, error)
 	OfflineDownload(name, fileURL, parentID string) (RemoteTask, error)
 	GetDownloadUrl(id string) (string, error)
+	BatchDeleteFiles(ids []string) error
+	Tokens() TokenPair
 }
 
 type Adapter struct {
@@ -46,6 +51,10 @@ func NewAdapter(api API) *Adapter {
 
 func (a *Adapter) Login() error {
 	return a.api.Login()
+}
+
+func (a *Adapter) Tokens() TokenPair {
+	return a.api.Tokens()
 }
 
 func (a *Adapter) List(parentID string) ([]RemoteFile, error) {
@@ -102,8 +111,30 @@ func (a *Adapter) OfflineDownload(name, fileURL, parentID string) (RemoteTask, e
 	return task, nil
 }
 
+func (a *Adapter) DeleteFile(id string) error {
+	id = strings.TrimSpace(id)
+	if id == "" {
+		return fmt.Errorf("pikpak file id is empty")
+	}
+	return a.api.BatchDeleteFiles([]string{id})
+}
+
 type GoAPI struct {
 	client *pikpakgo.PikPakClient
+}
+
+type AuthConfig struct {
+	Username     string
+	Password     string
+	AuthMode     string
+	AccessToken  string
+	RefreshToken string
+	EncodedToken string
+}
+
+type TokenPair struct {
+	AccessToken  string `json:"access_token"`
+	RefreshToken string `json:"refresh_token"`
 }
 
 func NewGoAPI(username, password string) (*GoAPI, error) {
@@ -114,8 +145,49 @@ func NewGoAPI(username, password string) (*GoAPI, error) {
 	return &GoAPI{client: client}, nil
 }
 
+func NewGoAPIWithAuth(auth AuthConfig) (*GoAPI, error) {
+	client, err := pikpakgo.NewPikPakClient(auth.Username, auth.Password)
+	if err != nil {
+		return nil, err
+	}
+	accessToken := strings.TrimSpace(auth.AccessToken)
+	refreshToken := strings.TrimSpace(auth.RefreshToken)
+	if strings.TrimSpace(auth.EncodedToken) != "" {
+		token, err := DecodeEncodedToken(auth.EncodedToken)
+		if err != nil {
+			return nil, err
+		}
+		accessToken = token.AccessToken
+		refreshToken = token.RefreshToken
+	}
+	if accessToken != "" || refreshToken != "" {
+		client.SetTokens(accessToken, refreshToken)
+	}
+	return &GoAPI{client: client}, nil
+}
+
+func DecodeEncodedToken(encoded string) (TokenPair, error) {
+	b, err := base64.StdEncoding.DecodeString(strings.TrimSpace(encoded))
+	if err != nil {
+		return TokenPair{}, fmt.Errorf("decode pikpak encoded token: %w", err)
+	}
+	var token TokenPair
+	if err := json.Unmarshal(b, &token); err != nil {
+		return TokenPair{}, fmt.Errorf("parse pikpak encoded token: %w", err)
+	}
+	if strings.TrimSpace(token.AccessToken) == "" || strings.TrimSpace(token.RefreshToken) == "" {
+		return TokenPair{}, fmt.Errorf("pikpak encoded token must contain access_token and refresh_token")
+	}
+	return token, nil
+}
+
 func (g *GoAPI) Login() error {
 	return g.client.Login()
+}
+
+func (g *GoAPI) Tokens() TokenPair {
+	accessToken, refreshToken := g.client.Tokens()
+	return TokenPair{AccessToken: accessToken, RefreshToken: refreshToken}
 }
 
 func (g *GoAPI) FileListAll(parentID string) ([]RemoteFile, error) {
@@ -182,4 +254,8 @@ func (g *GoAPI) GetDownloadUrl(id string) (string, error) {
 		return file.Links.ApplicationOctetStream.URL, nil
 	}
 	return "", fmt.Errorf("pikpak file %s has no playable download URL", id)
+}
+
+func (g *GoAPI) BatchDeleteFiles(ids []string) error {
+	return g.client.BatchDeleteFiles(ids)
 }

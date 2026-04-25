@@ -68,8 +68,8 @@ instance/
 # Scrapy stuff:
 .scrapy
 
-# Sphinx documentation
-docs/_build/
+# Documentation
+docs/
 
 # PyBuilder
 .pybuilder/
@@ -112,7 +112,9 @@ celerybeat.pid
 *.sage.py
 
 # Environments
-.env
+.install.lock
+data/*.db
+data/*.db-*
 .venv
 env/
 venv/
@@ -163,6 +165,9 @@ frontend/node_modules/
 dist/
 release/
 releases/
+
+# Local Docker all-in-one runtime data
+docker-data/
 
 # Keep Go source package tracked despite local torrent cache ignore
 !internal/torrent/

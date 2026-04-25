@@ -483,6 +483,12 @@ type ResponseLogin struct {
 	Sub          string `json:"sub"`
 }
 
+type RequestRefreshToken struct {
+	ClientId     string `json:"client_id,omitempty"`
+	RefreshToken string `json:"refresh_token,omitempty"`
+	GrantType    string `json:"grant_type,omitempty"`
+}
+
 type RequestLogout struct {
 	Token string `json:"token,omitempty"`
 }

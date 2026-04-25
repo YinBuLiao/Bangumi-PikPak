@@ -97,6 +97,7 @@ type PikPakClient struct {
 	accessToken  string
 	refreshToken string
 	sub          string
+	tokenAuth    bool
 	captchaToken string
 	deviceId     string
 	client       *resty.Client
@@ -119,11 +120,21 @@ func NewPikPakClient(username, password string) (*PikPakClient, error) {
 	}
 
 	client.AddRetryCondition(func(r *resty.Response, err error) bool {
-		if strings.Contains(string(r.Body()), "unauthenticated") {
-			if err := pikpak.Login(); err != nil {
+		if r != nil && strings.Contains(string(r.Body()), "unauthenticated") {
+			var authErr error
+			if pikpak.refreshToken != "" {
+				authErr = pikpak.RefreshAccessToken()
+				if authErr != nil {
+					authErr = pikpak.loginWithPassword()
+				}
+			} else {
+				authErr = pikpak.loginWithPassword()
+			}
+			if authErr != nil {
 				return false
 			}
 			r.Request.SetAuthToken(pikpak.accessToken)
+			return true
 		}
 		if err == nil {
 			return false
@@ -137,7 +148,31 @@ func NewPikPakClient(username, password string) (*PikPakClient, error) {
 	return &pikpak, nil
 }
 
+func (c *PikPakClient) SetTokens(accessToken, refreshToken string) {
+	c.accessToken = strings.TrimSpace(accessToken)
+	c.refreshToken = strings.TrimSpace(refreshToken)
+	c.tokenAuth = c.accessToken != "" || c.refreshToken != ""
+}
+
+func (c *PikPakClient) Tokens() (accessToken, refreshToken string) {
+	return c.accessToken, c.refreshToken
+}
+
 func (c *PikPakClient) Login() error {
+	if c.tokenAuth {
+		if c.accessToken != "" {
+			return nil
+		}
+		if c.refreshToken != "" {
+			if err := c.RefreshAccessToken(); err == nil {
+				return nil
+			}
+		}
+	}
+	return c.loginWithPassword()
+}
+
+func (c *PikPakClient) loginWithPassword() error {
 	loginURL := fmt.Sprintf("%s/v1/auth/signin", PikpakUserHost)
 	captchaMeta := CaptchaMeta{}
 	if strings.Contains(c.username, "@") {
@@ -170,6 +205,36 @@ func (c *PikPakClient) Login() error {
 	c.accessToken = resp.AccessToken
 	c.refreshToken = resp.RefreshToken
 	c.sub = resp.Sub
+	c.tokenAuth = c.accessToken != "" || c.refreshToken != ""
+	return nil
+}
+
+func (c *PikPakClient) RefreshAccessToken() error {
+	if c.refreshToken == "" {
+		return errors.New("pikpak refresh token is empty")
+	}
+	refreshURL := fmt.Sprintf("%s/v1/auth/token", PikpakUserHost)
+	req := RequestRefreshToken{
+		ClientId:     ClientId,
+		RefreshToken: c.refreshToken,
+		GrantType:    "refresh_token",
+	}
+	resp := ResponseLogin{}
+	originResp, err := c.client.R().
+		SetBody(&req).
+		SetResult(&resp).
+		SetHeader("Content-Type", "application/json; charset=utf-8").
+		Post(refreshURL)
+	if err != nil {
+		return err
+	}
+	if resp.AccessToken == "" {
+		return errRespToError(originResp.Body())
+	}
+	c.accessToken = resp.AccessToken
+	c.refreshToken = resp.RefreshToken
+	c.sub = resp.Sub
+	c.tokenAuth = true
 	return nil
 }
 

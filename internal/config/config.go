@@ -1,49 +1,106 @@
 package config
 
 import (
-	"bufio"
 	"encoding/json"
 	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
-	"strconv"
 	"strings"
+	"time"
 )
 
 type Config struct {
-	Username      string `json:"username"`
-	Password      string `json:"password"`
-	Path          string `json:"path"`
-	RSS           string `json:"rss"`
-	HTTPProxy     string `json:"http_proxy"`
-	HTTPSProxy    string `json:"https_proxy"`
-	SocksProxy    string `json:"socks_proxy"`
-	EnableProxy   bool   `json:"enable_proxy"`
-	MikanUsername string `json:"mikan_username"`
-	MikanPassword string `json:"mikan_password"`
-	MySQLHost     string `json:"mysql_host"`
-	MySQLPort     int    `json:"mysql_port"`
-	MySQLDatabase string `json:"mysql_database"`
-	MySQLUsername string `json:"mysql_username"`
-	MySQLPassword string `json:"mysql_password"`
-	MySQLDSN      string `json:"mysql_dsn"`
-	RedisAddr     string `json:"redis_addr"`
-	RedisPassword string `json:"redis_password"`
-	RedisDB       int    `json:"redis_db"`
+	Username               string `json:"username"`
+	Password               string `json:"password"`
+	PikPakAuthMode         string `json:"pikpak_auth_mode"`
+	PikPakAccessToken      string `json:"pikpak_access_token"`
+	PikPakRefreshToken     string `json:"pikpak_refresh_token"`
+	PikPakEncodedToken     string `json:"pikpak_encoded_token"`
+	Path                   string `json:"path"`
+	RSS                    string `json:"rss"`
+	HTTPProxy              string `json:"http_proxy"`
+	HTTPSProxy             string `json:"https_proxy"`
+	SocksProxy             string `json:"socks_proxy"`
+	EnableProxy            bool   `json:"enable_proxy"`
+	RequireLogin           bool   `json:"require_login"`
+	EnableRegistration     bool   `json:"enable_registration"`
+	RequireInvite          bool   `json:"require_invite"`
+	UserDailyDownloadLimit int    `json:"user_daily_download_limit"`
+	MikanUsername          string `json:"mikan_username"`
+	MikanPassword          string `json:"mikan_password"`
+	MySQLHost              string `json:"mysql_host"`
+	MySQLPort              int    `json:"mysql_port"`
+	MySQLDatabase          string `json:"mysql_database"`
+	MySQLUsername          string `json:"mysql_username"`
+	MySQLPassword          string `json:"mysql_password"`
+	MySQLDSN               string `json:"mysql_dsn"`
+	RedisAddr              string `json:"redis_addr"`
+	RedisPassword          string `json:"redis_password"`
+	RedisDB                int    `json:"redis_db"`
+	AdminUsername          string `json:"admin_username"`
+	AdminPassword          string `json:"admin_password"`
+	StorageProvider        string `json:"storage_provider"`
+	Drive115Cookie         string `json:"drive115_cookie"`
+	Drive115RootCID        string `json:"drive115_root_cid"`
+	Aria2RPCURL            string `json:"aria2_rpc_url"`
+	Aria2RPCSecret         string `json:"aria2_rpc_secret"`
+	LocalStoragePath       string `json:"local_storage_path"`
+	NASStoragePath         string `json:"nas_storage_path"`
+}
+
+func Default() Config {
+	return Config{
+		PikPakAuthMode:         "password",
+		HTTPProxy:              "http://127.0.0.1:7890",
+		HTTPSProxy:             "http://127.0.0.1:7890",
+		SocksProxy:             "socks5://127.0.0.1:7890",
+		MySQLHost:              "127.0.0.1",
+		MySQLPort:              3306,
+		MySQLDatabase:          "anime",
+		RedisAddr:              "127.0.0.1:6379",
+		RedisDB:                0,
+		RequireLogin:           true,
+		EnableRegistration:     true,
+		RequireInvite:          false,
+		UserDailyDownloadLimit: 3,
+		AdminUsername:          "admin",
+		StorageProvider:        "pikpak",
+		Drive115RootCID:        "0",
+		Aria2RPCURL:            "http://127.0.0.1:6800/jsonrpc",
+		LocalStoragePath:       "downloads",
+	}
+}
+
+func InstallLockPath(configPath string) string {
+	dir := filepath.Dir(strings.TrimSpace(configPath))
+	if dir == "" || dir == "." {
+		return ".install.lock"
+	}
+	return filepath.Join(dir, ".install.lock")
+}
+
+func HasInstallLock(configPath string) bool {
+	info, err := os.Stat(InstallLockPath(configPath))
+	return err == nil && !info.IsDir()
+}
+
+func WriteInstallLock(configPath string) error {
+	lockPath := InstallLockPath(configPath)
+	if err := os.MkdirAll(filepath.Dir(lockPath), 0o755); err != nil {
+		return fmt.Errorf("create install lock directory: %w", err)
+	}
+	content := fmt.Sprintf("installed_at=%s\nconfig=%s\n", time.Now().Format(time.RFC3339), configPath)
+	if err := os.WriteFile(lockPath, []byte(content), 0o600); err != nil {
+		return fmt.Errorf("write install lock %s: %w", lockPath, err)
+	}
+	return nil
 }
 
 func Load(path string) (Config, error) {
 	b, err := os.ReadFile(path)
 	if err != nil {
 		return Config{}, fmt.Errorf("read config %s: %w", path, err)
-	}
-	if strings.EqualFold(filepath.Ext(path), ".env") {
-		cfg, err := parseEnvConfig(string(b))
-		if err != nil {
-			return Config{}, fmt.Errorf("parse config %s: %w", path, err)
-		}
-		return cfg, nil
 	}
 	var cfg Config
 	if err := json.Unmarshal(b, &cfg); err != nil {
@@ -53,13 +110,6 @@ func Load(path string) (Config, error) {
 }
 
 func Save(path string, cfg Config) error {
-	if strings.EqualFold(filepath.Ext(path), ".env") {
-		b := []byte(formatEnvConfig(cfg))
-		if err := os.WriteFile(path, b, 0o600); err != nil {
-			return fmt.Errorf("write config %s: %w", path, err)
-		}
-		return nil
-	}
 	b, err := json.MarshalIndent(cfg, "", "    ")
 	if err != nil {
 		return fmt.Errorf("marshal config: %w", err)
@@ -69,92 +119,6 @@ func Save(path string, cfg Config) error {
 		return fmt.Errorf("write config %s: %w", path, err)
 	}
 	return nil
-}
-
-func parseEnvConfig(raw string) (Config, error) {
-	values := make(map[string]string)
-	scanner := bufio.NewScanner(strings.NewReader(raw))
-	for scanner.Scan() {
-		line := strings.TrimSpace(scanner.Text())
-		if line == "" || strings.HasPrefix(line, "#") {
-			continue
-		}
-		line = strings.TrimPrefix(line, "export ")
-		parts := strings.SplitN(line, "=", 2)
-		if len(parts) != 2 {
-			continue
-		}
-		key := strings.ToUpper(strings.TrimSpace(parts[0]))
-		value := strings.TrimSpace(parts[1])
-		value = strings.Trim(value, `"'`)
-		values[key] = value
-	}
-	if err := scanner.Err(); err != nil {
-		return Config{}, err
-	}
-	boolValue := func(key string) bool {
-		v, _ := strconv.ParseBool(values[key])
-		return v
-	}
-	intValue := func(key string) int {
-		v, _ := strconv.Atoi(values[key])
-		return v
-	}
-	return Config{
-		Username:      values["USERNAME"],
-		Password:      values["PASSWORD"],
-		Path:          values["PATH"],
-		RSS:           values["RSS"],
-		HTTPProxy:     values["HTTP_PROXY"],
-		HTTPSProxy:    values["HTTPS_PROXY"],
-		SocksProxy:    values["SOCKS_PROXY"],
-		EnableProxy:   boolValue("ENABLE_PROXY"),
-		MikanUsername: values["MIKAN_USERNAME"],
-		MikanPassword: values["MIKAN_PASSWORD"],
-		MySQLHost:     values["MYSQL_HOST"],
-		MySQLPort:     intValue("MYSQL_PORT"),
-		MySQLDatabase: values["MYSQL_DATABASE"],
-		MySQLUsername: values["MYSQL_USERNAME"],
-		MySQLPassword: values["MYSQL_PASSWORD"],
-		MySQLDSN:      values["MYSQL_DSN"],
-		RedisAddr:     values["REDIS_ADDR"],
-		RedisPassword: values["REDIS_PASSWORD"],
-		RedisDB:       intValue("REDIS_DB"),
-	}, nil
-}
-
-func formatEnvConfig(c Config) string {
-	lines := []string{
-		"USERNAME=" + quoteEnv(c.Username),
-		"PASSWORD=" + quoteEnv(c.Password),
-		"PATH=" + quoteEnv(c.Path),
-		"RSS=" + quoteEnv(c.RSS),
-		"HTTP_PROXY=" + quoteEnv(c.HTTPProxy),
-		"HTTPS_PROXY=" + quoteEnv(c.HTTPSProxy),
-		"SOCKS_PROXY=" + quoteEnv(c.SocksProxy),
-		"ENABLE_PROXY=" + strconv.FormatBool(c.EnableProxy),
-		"MIKAN_USERNAME=" + quoteEnv(c.MikanUsername),
-		"MIKAN_PASSWORD=" + quoteEnv(c.MikanPassword),
-		"MYSQL_HOST=" + quoteEnv(c.MySQLHost),
-		"MYSQL_PORT=" + strconv.Itoa(c.MySQLPort),
-		"MYSQL_DATABASE=" + quoteEnv(c.MySQLDatabase),
-		"MYSQL_USERNAME=" + quoteEnv(c.MySQLUsername),
-		"MYSQL_PASSWORD=" + quoteEnv(c.MySQLPassword),
-		"MYSQL_DSN=" + quoteEnv(c.MySQLDSN),
-		"REDIS_ADDR=" + quoteEnv(c.RedisAddr),
-		"REDIS_PASSWORD=" + quoteEnv(c.RedisPassword),
-		"REDIS_DB=" + strconv.Itoa(c.RedisDB),
-	}
-	return strings.Join(lines, "\n") + "\n"
-}
-
-func quoteEnv(v string) string {
-	if v == "" {
-		return ""
-	}
-	escaped := strings.ReplaceAll(v, `\`, `\\`)
-	escaped = strings.ReplaceAll(escaped, `"`, `\"`)
-	return `"` + escaped + `"`
 }
 
 func (c Config) MySQLConfigured() bool {
@@ -169,19 +133,78 @@ func (c Config) RedisConfigured() bool {
 	return strings.TrimSpace(c.RedisAddr) != ""
 }
 
+func (c Config) PikPakTokenAuth() bool {
+	return strings.EqualFold(strings.TrimSpace(c.PikPakAuthMode), "token")
+}
+
+func (c Config) PikPakTokenConfigured() bool {
+	if strings.TrimSpace(c.PikPakEncodedToken) != "" {
+		return true
+	}
+	return strings.TrimSpace(c.PikPakAccessToken) != "" && strings.TrimSpace(c.PikPakRefreshToken) != ""
+}
+
+func (c Config) NormalizedStorageProvider() string {
+	provider := strings.ToLower(strings.TrimSpace(c.StorageProvider))
+	switch provider {
+	case "", "pikpak":
+		return "pikpak"
+	case "115", "drive115":
+		return "drive115"
+	case "local":
+		return "local"
+	case "nas":
+		return "nas"
+	default:
+		return provider
+	}
+}
+
 func (c Config) Validate() error {
 	var missing []string
-	if strings.TrimSpace(c.Username) == "" {
-		missing = append(missing, "username")
+	switch c.NormalizedStorageProvider() {
+	case "pikpak":
+		if c.PikPakTokenAuth() {
+			if !c.PikPakTokenConfigured() {
+				missing = append(missing, "pikpak token")
+			}
+		} else {
+			if strings.TrimSpace(c.Username) == "" {
+				missing = append(missing, "username")
+			}
+			if strings.TrimSpace(c.Password) == "" {
+				missing = append(missing, "password")
+			}
+		}
+		if strings.TrimSpace(c.Path) == "" {
+			missing = append(missing, "path")
+		}
+	case "drive115":
+		if strings.TrimSpace(c.Drive115Cookie) == "" {
+			missing = append(missing, "drive115_cookie")
+		}
+	case "local":
+		if strings.TrimSpace(c.Aria2RPCURL) == "" {
+			missing = append(missing, "aria2_rpc_url")
+		}
+		if strings.TrimSpace(c.LocalStoragePath) == "" {
+			missing = append(missing, "local_storage_path")
+		}
+	case "nas":
+		if strings.TrimSpace(c.Aria2RPCURL) == "" {
+			missing = append(missing, "aria2_rpc_url")
+		}
+		if strings.TrimSpace(c.NASStoragePath) == "" {
+			missing = append(missing, "nas_storage_path")
+		}
+	default:
+		missing = append(missing, "storage_provider")
 	}
-	if strings.TrimSpace(c.Password) == "" {
-		missing = append(missing, "password")
+	if strings.TrimSpace(c.AdminUsername) == "" {
+		missing = append(missing, "admin_username")
 	}
-	if strings.TrimSpace(c.Path) == "" {
-		missing = append(missing, "path")
-	}
-	if strings.TrimSpace(c.RSS) == "" {
-		missing = append(missing, "rss")
+	if strings.TrimSpace(c.AdminPassword) == "" {
+		missing = append(missing, "admin_password")
 	}
 	if len(missing) > 0 {
 		return errors.New("missing required config fields: " + strings.Join(missing, ", "))
@@ -192,13 +215,13 @@ func (c Config) Validate() error {
 		"path":     "your_pikpak_folder_id",
 	}
 	var exampleFields []string
-	if c.Username == examples["username"] {
+	if c.NormalizedStorageProvider() == "pikpak" && !c.PikPakTokenAuth() && c.Username == examples["username"] {
 		exampleFields = append(exampleFields, "username")
 	}
-	if c.Password == examples["password"] {
+	if c.NormalizedStorageProvider() == "pikpak" && !c.PikPakTokenAuth() && c.Password == examples["password"] {
 		exampleFields = append(exampleFields, "password")
 	}
-	if c.Path == examples["path"] {
+	if c.NormalizedStorageProvider() == "pikpak" && c.Path == examples["path"] {
 		exampleFields = append(exampleFields, "path")
 	}
 	if strings.Contains(c.RSS, "your_token_here") {
@@ -216,8 +239,31 @@ func (c Config) Validate() error {
 	if c.MySQLPassword == "your_mysql_password" {
 		exampleFields = append(exampleFields, "mysql_password")
 	}
+	if c.AdminUsername == "your_admin_username" {
+		exampleFields = append(exampleFields, "admin_username")
+	}
+	if c.AdminPassword == "your_admin_password" {
+		exampleFields = append(exampleFields, "admin_password")
+	}
 	if len(exampleFields) > 0 {
 		return errors.New("config contains example values: " + strings.Join(exampleFields, ", "))
+	}
+	return nil
+}
+
+func (c Config) ValidateInstall() error {
+	var missing []string
+	if !c.MySQLConfigured() {
+		missing = append(missing, "mysql")
+	}
+	if strings.TrimSpace(c.AdminUsername) == "" {
+		missing = append(missing, "admin_username")
+	}
+	if strings.TrimSpace(c.AdminPassword) == "" {
+		missing = append(missing, "admin_password")
+	}
+	if len(missing) > 0 {
+		return errors.New("missing required config fields: " + strings.Join(missing, ", "))
 	}
 	return nil
 }

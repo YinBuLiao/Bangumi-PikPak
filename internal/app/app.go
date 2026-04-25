@@ -7,6 +7,7 @@ import (
 	"net/http"
 	"net/url"
 	"path/filepath"
+	"strings"
 
 	"bangumi-pikpak/internal/config"
 	"bangumi-pikpak/internal/episode"
@@ -14,12 +15,14 @@ import (
 	"bangumi-pikpak/internal/pikpak"
 	"bangumi-pikpak/internal/rss"
 	"bangumi-pikpak/internal/sanitize"
+	"bangumi-pikpak/internal/storage"
 	"bangumi-pikpak/internal/torrent"
 )
 
 type ResolvedEntry struct {
 	Entry        rss.Entry
 	BangumiTitle string
+	EpisodeLabel string
 	CoverURL     string
 	Summary      string
 }
@@ -30,6 +33,7 @@ type PikPakClient interface {
 	HasOriginalURL(parentID, targetURL string) (bool, error)
 	HasChildren(parentID string) (bool, error)
 	OfflineDownload(name, fileURL, parentID string) (pikpak.RemoteTask, error)
+	DeleteFile(id string) error
 }
 
 type EpisodeStore interface {
@@ -44,8 +48,10 @@ type Runner struct {
 	Logger      *slog.Logger
 	TorrentRoot string
 	PikPak      PikPakClient
+	Storage     storage.Provider
 	Store       EpisodeStore
 	EntriesFunc func(context.Context) ([]ResolvedEntry, error)
+	Strict      bool
 }
 
 type plannedEntry struct {
@@ -64,10 +70,17 @@ func (r Runner) RunOnce(ctx context.Context) error {
 	newEntries := make([]plannedEntry, 0, len(entries))
 	seenEpisodes := make(map[string]struct{}, len(entries))
 	for _, entry := range entries {
-		episodeLabel, ok := episode.LabelFromTitle(entry.Entry.Title)
-		if !ok {
-			r.log().Warn("skip entry because episode number cannot be parsed", "bangumi", entry.BangumiTitle, "entry", entry.Entry.Title)
-			continue
+		episodeLabel := strings.TrimSpace(entry.EpisodeLabel)
+		if episodeLabel == "" {
+			var ok bool
+			episodeLabel, ok = episode.LabelFromTitle(entry.Entry.Title)
+			if !ok {
+				r.log().Warn("skip entry because episode number cannot be parsed", "bangumi", entry.BangumiTitle, "entry", entry.Entry.Title)
+				if r.Strict {
+					return fmt.Errorf("episode number cannot be parsed: %s", entry.Entry.Title)
+				}
+				continue
+			}
 		}
 		folderName := sanitize.Name(entry.BangumiTitle)
 		episodeLabel = sanitize.Name(episodeLabel)
@@ -95,6 +108,9 @@ func (r Runner) RunOnce(ctx context.Context) error {
 		localPath, err := torrent.LocalEpisodePath(r.torrentRoot(), folderName, episodeLabel, entry.Entry.TorrentURL)
 		if err != nil {
 			r.log().Warn("skip entry with invalid torrent url", "title", entry.Entry.Title, "error", err)
+			if r.Strict {
+				return fmt.Errorf("invalid torrent url for %s: %w", entry.Entry.Title, err)
+			}
 			continue
 		}
 		r.log().Info("detected new torrent", "bangumi", folderName, "episode", episodeLabel, "entry", entry.Entry.Title, "torrent", entry.Entry.TorrentURL, "local_path", localPath)
@@ -105,12 +121,27 @@ func (r Runner) RunOnce(ctx context.Context) error {
 		return nil
 	}
 
-	r.log().Info("new torrents detected, logging in to PikPak", "count", len(newEntries), "username", r.Config.Username)
-	if err := r.PikPak.Login(); err != nil {
-		r.log().Error("PikPak login failed", "username", r.Config.Username, "error", err)
-		return fmt.Errorf("pikpak login: %w", err)
+	provider := r.storageProvider()
+	if provider == nil {
+		return fmt.Errorf("storage provider is not initialized")
 	}
-	r.log().Info("PikPak login succeeded", "username", r.Config.Username)
+	if provider.Name() == "pikpak" {
+		r.log().Info("new torrents detected, logging in to PikPak", "count", len(newEntries), "username", r.Config.Username)
+	} else {
+		r.log().Info("new torrents detected, initializing storage provider", "count", len(newEntries), "provider", provider.Name())
+	}
+	if err := provider.Login(ctx); err != nil {
+		r.log().Error("storage provider login/init failed", "provider", provider.Name(), "error", err)
+		if provider.Name() == "pikpak" {
+			return fmt.Errorf("pikpak login: %w", err)
+		}
+		return fmt.Errorf("%s init: %w", provider.Name(), err)
+	}
+	if provider.Name() == "pikpak" {
+		r.log().Info("PikPak login succeeded", "username", r.Config.Username)
+	} else {
+		r.log().Info("storage provider ready", "provider", provider.Name())
+	}
 
 	for _, entry := range newEntries {
 		select {
@@ -121,33 +152,42 @@ func (r Runner) RunOnce(ctx context.Context) error {
 		folderName := sanitize.Name(entry.BangumiTitle)
 		r.log().Info("processing new bangumi torrent", "bangumi", folderName, "episode", entry.EpisodeLabel, "entry", entry.Entry.Title, "torrent", entry.Entry.TorrentURL)
 
-		bangumiFolderID, err := r.PikPak.EnsureFolder(r.Config.Path, folderName)
+		bangumiFolder, err := provider.EnsureBangumi(ctx, folderName)
 		if err != nil {
-			r.log().Error("ensure pikpak bangumi folder failed", "bangumi", folderName, "error", err)
+			r.log().Error("ensure storage bangumi folder failed", "provider", provider.Name(), "bangumi", folderName, "error", err)
+			if r.Strict {
+				return fmt.Errorf("ensure storage bangumi folder %s: %w", folderName, err)
+			}
 			continue
 		}
-		r.log().Info("PikPak bangumi folder ready", "bangumi", folderName, "folder_id", bangumiFolderID)
+		r.log().Info("storage bangumi folder ready", "provider", provider.Name(), "bangumi", folderName, "folder_id", bangumiFolder.ID, "path", bangumiFolder.Path)
 
-		episodeFolderID, err := r.PikPak.EnsureFolder(bangumiFolderID, entry.EpisodeLabel)
+		episodeFolder, err := provider.EnsureEpisode(ctx, bangumiFolder, entry.EpisodeLabel)
 		if err != nil {
-			r.log().Error("ensure pikpak episode folder failed", "bangumi", folderName, "episode", entry.EpisodeLabel, "error", err)
+			r.log().Error("ensure storage episode folder failed", "provider", provider.Name(), "bangumi", folderName, "episode", entry.EpisodeLabel, "error", err)
+			if r.Strict {
+				return fmt.Errorf("ensure storage episode folder %s/%s: %w", folderName, entry.EpisodeLabel, err)
+			}
 			continue
 		}
-		r.log().Info("PikPak episode folder ready", "bangumi", folderName, "episode", entry.EpisodeLabel, "folder_id", episodeFolderID)
+		r.log().Info("storage episode folder ready", "provider", provider.Name(), "bangumi", folderName, "episode", entry.EpisodeLabel, "folder_id", episodeFolder.ID, "path", episodeFolder.Path)
 
-		hasChildren, err := r.PikPak.HasChildren(episodeFolderID)
+		hasChildren, err := provider.HasChildren(ctx, episodeFolder)
 		if err != nil {
 			r.log().Warn("remote episode folder check failed", "bangumi", folderName, "episode", entry.EpisodeLabel, "error", err)
 		}
 		if hasChildren {
 			r.log().Info("skip episode because remote folder already has files", "bangumi", folderName, "episode", entry.EpisodeLabel)
-			r.markDownloaded(ctx, folderName, entry.EpisodeLabel, episodeFolderID, entry.Entry.TorrentURL)
+			r.markDownloaded(ctx, folderName, entry.EpisodeLabel, episodeFolder.ID, entry.Entry.TorrentURL)
 			continue
 		}
 
 		if r.Store == nil && !isMagnet(entry.Entry.TorrentURL) {
 			if err := torrent.Download(r.httpClient(), entry.Entry.TorrentURL, entry.LocalPath); err != nil {
 				r.log().Error("download torrent failed", "bangumi", folderName, "episode", entry.EpisodeLabel, "url", entry.Entry.TorrentURL, "error", err)
+				if r.Strict {
+					return fmt.Errorf("download torrent %s: %w", entry.Entry.TorrentURL, err)
+				}
 				continue
 			}
 			r.log().Info("torrent downloaded", "bangumi", folderName, "episode", entry.EpisodeLabel, "local_path", entry.LocalPath)
@@ -157,26 +197,39 @@ func (r Runner) RunOnce(ctx context.Context) error {
 			r.log().Info("mysql state enabled; skip local torrent cache", "bangumi", folderName, "episode", entry.EpisodeLabel)
 		}
 
-		duplicate, err := r.PikPak.HasOriginalURL(episodeFolderID, entry.Entry.TorrentURL)
+		duplicate, err := provider.HasOriginalURL(ctx, episodeFolder, entry.Entry.TorrentURL)
 		if err != nil {
 			r.log().Warn("remote duplicate check failed", "bangumi", folderName, "episode", entry.EpisodeLabel, "error", err)
 		}
 		if duplicate {
 			r.log().Info("skip duplicate remote torrent", "bangumi", folderName, "episode", entry.EpisodeLabel, "torrent", entry.Entry.TorrentURL)
-			r.markDownloaded(ctx, folderName, entry.EpisodeLabel, episodeFolderID, entry.Entry.TorrentURL)
+			r.markDownloaded(ctx, folderName, entry.EpisodeLabel, episodeFolder.ID, entry.Entry.TorrentURL)
 			continue
 		}
 
 		name := filepath.Base(entry.LocalPath)
-		if _, err := r.PikPak.OfflineDownload(name, entry.Entry.TorrentURL, episodeFolderID); err != nil {
+		if _, err := provider.SubmitDownload(ctx, storage.DownloadTask{Name: name, SourceURL: entry.Entry.TorrentURL, BangumiTitle: folderName, EpisodeLabel: entry.EpisodeLabel, Folder: episodeFolder}); err != nil {
 			r.log().Error("offline download failed", "bangumi", folderName, "episode", entry.EpisodeLabel, "error", err)
+			if r.Strict {
+				return fmt.Errorf("submit download to %s for %s/%s: %w", provider.Name(), folderName, entry.EpisodeLabel, err)
+			}
 			continue
 		}
-		r.markDownloaded(ctx, folderName, entry.EpisodeLabel, episodeFolderID, entry.Entry.TorrentURL)
+		r.markDownloaded(ctx, folderName, entry.EpisodeLabel, episodeFolder.ID, entry.Entry.TorrentURL)
 		if entry.CoverURL != "" || entry.Summary != "" {
 			r.saveMetadata(ctx, folderName, entry.CoverURL, entry.Summary)
 		}
 		r.log().Info("submitted offline download", "bangumi", folderName, "episode", entry.EpisodeLabel, "torrent", entry.Entry.TorrentURL)
+	}
+	return nil
+}
+
+func (r Runner) storageProvider() storage.Provider {
+	if r.Storage != nil {
+		return r.Storage
+	}
+	if r.PikPak != nil {
+		return storage.NewPikPakProvider(r.PikPak, r.Config.Path)
 	}
 	return nil
 }

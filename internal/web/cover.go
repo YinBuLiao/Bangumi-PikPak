@@ -29,6 +29,10 @@ func enrichLibraryCovers(ctx context.Context, lib *LibraryResponse, resolver Cov
 		if lib.Bangumi[i].CoverURL != "" && lib.Bangumi[i].Summary != "" {
 			continue
 		}
+		queryTitle := ExtractBangumiTitle(lib.Bangumi[i].Title)
+		if queryTitle != "" {
+			lib.Bangumi[i].Title = queryTitle
+		}
 		meta, err := resolver.SearchMetadata(lib.Bangumi[i].Title)
 		if err != nil {
 			if log != nil {

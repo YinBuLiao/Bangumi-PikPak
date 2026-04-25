@@ -188,12 +188,56 @@ func (s *MySQLStore) MarkEpisodeDownloaded(ctx context.Context, title, label, fo
 	}
 	_, err := s.db.ExecContext(ctx, `INSERT INTO episodes (bangumi_id, label, pikpak_folder_id, torrent_url, downloaded_at)
 		SELECT id, ?, ?, NULLIF(?, ''), NOW() FROM bangumi WHERE title=?
-		ON DUPLICATE KEY UPDATE pikpak_folder_id=IF(VALUES(pikpak_folder_id)<>'',VALUES(pikpak_folder_id),pikpak_folder_id), torrent_url=IF(VALUES(torrent_url) IS NOT NULL,VALUES(torrent_url),torrent_url), downloaded_at=NOW()`, strings.TrimSpace(label), strings.TrimSpace(folderID), strings.TrimSpace(torrentURL), strings.TrimSpace(title))
+		ON DUPLICATE KEY UPDATE
+			episodes.pikpak_folder_id=IF(VALUES(pikpak_folder_id)<>'',VALUES(pikpak_folder_id),episodes.pikpak_folder_id),
+			episodes.torrent_url=IF(VALUES(torrent_url) IS NOT NULL,VALUES(torrent_url),episodes.torrent_url),
+			episodes.downloaded_at=NOW()`, strings.TrimSpace(label), strings.TrimSpace(folderID), strings.TrimSpace(torrentURL), strings.TrimSpace(title))
 	return err
 }
 
 func (s *MySQLStore) SaveBangumiMetadata(ctx context.Context, title, coverURL, summary string) error {
 	return s.UpsertBangumi(ctx, BangumiRecord{Title: title, CoverURL: coverURL, Summary: summary})
+}
+
+func (s *MySQLStore) DeleteBangumi(ctx context.Context, titles []string) (int64, error) {
+	if s == nil || len(titles) == 0 {
+		return 0, nil
+	}
+	cleaned := make([]string, 0, len(titles))
+	for _, title := range titles {
+		if title = strings.TrimSpace(title); title != "" {
+			cleaned = append(cleaned, title)
+		}
+	}
+	if len(cleaned) == 0 {
+		return 0, nil
+	}
+	placeholders := strings.TrimRight(strings.Repeat("?,", len(cleaned)), ",")
+	args := make([]any, 0, len(cleaned))
+	for _, title := range cleaned {
+		args = append(args, title)
+	}
+	res, err := s.db.ExecContext(ctx, `DELETE FROM bangumi WHERE title IN (`+placeholders+`)`, args...)
+	if err != nil {
+		return 0, err
+	}
+	return res.RowsAffected()
+}
+
+func (s *MySQLStore) DeleteEpisode(ctx context.Context, title, label string) (int64, error) {
+	if s == nil {
+		return 0, nil
+	}
+	title = strings.TrimSpace(title)
+	label = strings.TrimSpace(label)
+	if title == "" || label == "" {
+		return 0, nil
+	}
+	res, err := s.db.ExecContext(ctx, `DELETE e FROM episodes e JOIN bangumi b ON b.id=e.bangumi_id WHERE b.title=? AND e.label=?`, title, label)
+	if err != nil {
+		return 0, err
+	}
+	return res.RowsAffected()
 }
 
 func (s *MySQLStore) SaveSubscription(ctx context.Context, rec BangumiRecord, language int) error {
